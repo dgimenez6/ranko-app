@@ -16,9 +16,11 @@ serve(async (req) => {
 
   try {
     const { phone, code, business_id } = await req.json();
-    const cleanPhone = phone.replace(/\D/g, '');
+    
+    // 1. Limpieza consistente (mismo formato que send-otp)
+    const cleanPhone = phone.replace(/\+/g, '').replace(/\s/g, '');
 
-    // 1. Validar el código
+    // 2. Validar el código contra la base de datos
     const { data: session, error: sessionError } = await supabase
       .from('user_sessions')
       .select('*')
@@ -34,35 +36,36 @@ serve(async (req) => {
       });
     }
 
-    // 2. Actualizar sesión y vincular WhatsApp (Atómico)
+    // 3. Actualizar sesión y vincular WhatsApp (Atómico)
     const { error: errorSession } = await supabase
       .from('user_sessions')
       .update({ is_verified: true, active_business_id: business_id })
       .eq('phone', cleanPhone);
 
-    if (errorSession) throw new Error(`Error session: ${errorSession.message}`);
+    if (errorSession) throw new Error(`Error en sesión: ${errorSession.message}`);
 
+    // Guardar configuración vinculando el ID de instancia desde los Secrets
     const { error: errorConfig } = await supabase
       .from('whatsapp_configs')
       .upsert({
         business_id: business_id,
         phone_number: cleanPhone,
-        instance_key: 'ranko-test',
+        instance_key: Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test',
         updated_at: new Date().toISOString()
       }, { onConflict: 'business_id' });
 
-    if (errorConfig) throw new Error(`Error config: ${errorConfig.message}`);
+    if (errorConfig) throw new Error(`Error en config: ${errorConfig.message}`);
 
-    // 3. Trigger de bienvenida con await para evitar duplicados
+    // 4. Trigger de bienvenida (Opcional: no bloquea la verificación si falla)
     const welcomeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/welcome-message`;
-    await fetch(welcomeUrl, {
+    fetch(welcomeUrl, {
       method: 'POST',
       headers: { 
         'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
         'Content-Type': 'application/json' 
       },
       body: JSON.stringify({ business_id })
-    });
+    }).catch(e => console.error("Error enviando bienvenida:", e));
 
     return new Response(JSON.stringify({ success: true, verified: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -70,6 +73,7 @@ serve(async (req) => {
     });
 
   } catch (err) {
+    console.error("Error crítico en verify-otp:", err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500

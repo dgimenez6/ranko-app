@@ -17,21 +17,23 @@ serve(async (req) => {
   try {
     const payload = await req.json();
     
-    // 1. Extracción y limpieza de datos entrantes
+    // 1. Extracción y limpieza profunda del mensaje
     const incomingMessage = (payload.data?.message?.conversation || 
                              payload.data?.message?.extendedTextMessage?.text || "").trim();
     const senderPhone = payload.data?.key?.remoteJid?.split('@')[0];
-    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY') || '2EBE5DA7F3DB-43F1-998A-0616AE7E510F';
+    
+    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
+    const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test';
 
-    // 2. Identificar al dueño y el negocio que está gestionando
-    // Priorizamos el 'active_business_id' de la sesión para evitar confusiones
+    // 2. Identificar al dueño y el negocio (Validación de Sesión)
     const { data: userSession, error: sessionError } = await supabase
       .from('user_sessions')
       .select('active_business_id, businesses(*)')
       .eq('phone', senderPhone)
-      .single();
+      .maybeSingle();
 
     if (sessionError || !userSession || !userSession.businesses) {
+      console.log(`Teléfono no registrado: ${senderPhone}`);
       return new Response("No registrado", { status: 200 });
     }
 
@@ -40,70 +42,72 @@ serve(async (req) => {
     const msgLower = incomingMessage.toLowerCase();
     let responseText = "";
 
-    // 3. Lógica de Comandos Bilingüe Mejorada
+    // 3. Lógica de Comandos Robusta
     
-    // COMANDO: AYUDA / AJUDA
-    if (['ayuda', 'ajuda', '/start', 'help'].includes(msgLower)) {
+    // AYUDA / MENU
+    if (['ayuda', 'ajuda', '/start', 'help', 'menu'].some(cmd => msgLower.includes(cmd))) {
       responseText = isPT 
-        ? `🤖 *Ranko Assistente*\n\nComandos:\n👉 *STATUS*: Ver config atual\n👉 *AUTO ON/OFF*: Ativar/Desativar resposta auto\n👉 *TOM [friendly/professional]*: Mudar tom\n👉 *SIM*: Publicar última sugestão`
-        : `🤖 *Ranko Asistente*\n\nComandos:\n👉 *STATUS*: Ver config actual\n👉 *AUTO ON/OFF*: Activar/Desactivar respuesta auto\n👉 *TONO [friendly/professional]*: Cambiar tono\n👉 *SI*: Publicar última sugerencia`;
+        ? `🤖 *Ranko Assistente (${biz.business_name})*\n\nComandos:\n👉 *STATUS*: Ver configs\n👉 *AUTO ON/OFF*: Resposta auto\n👉 *TOM [amigável/profissional]*: Mudar tom\n👉 *SIM*: Publicar sugestão`
+        : `🤖 *Ranko Asistente (${biz.business_name})*\n\nComandos:\n👉 *STATUS*: Ver config actual\n👉 *AUTO ON/OFF*: Respuesta auto\n👉 *TONO [amigable/profesional]*: Cambiar tono\n👉 *SI*: Publicar sugerencia`;
     }
 
-    // COMANDO: STATUS
-    else if (msgLower === 'status') {
+    // STATUS
+    else if (msgLower.includes('status')) {
+      const toneLabel = isPT ? (biz.reply_tone === 'friendly' ? 'Amigável' : 'Profissional') : (biz.reply_tone === 'friendly' ? 'Amigable' : 'Profesional');
       responseText = isPT
-        ? `📊 *Status de ${biz.business_name}:*\n• Tom: *${biz.reply_tone}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? '✅' : '❌'}*\n• Créditos usados: *${biz.credits_used || 0}*`
-        : `📊 *Status de ${biz.business_name}:*\n• Tono: *${biz.reply_tone}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? '✅' : '❌'}*\n• Créditos usados: *${biz.credits_used || 0}*`;
+        ? `📊 *Status de ${biz.business_name}:*\n• Tom: *${toneLabel}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? '✅' : '❌'}*\n• Plano: *${biz.plan_status?.toUpperCase()}*`
+        : `📊 *Status de ${biz.business_name}:*\n• Tono: *${toneLabel}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? '✅' : '❌'}*\n• Plan: *${biz.plan_status?.toUpperCase()}*`;
     }
 
-    // COMANDO: CAMBIO DE AUTO-REPLY (AUTO ON/OFF)
-    else if (msgLower.startsWith('auto ')) {
-      const mode = msgLower.split(" ")[1];
-      const isEnabled = mode === 'on';
+    // AUTO-REPLY (ON/OFF)
+    else if (msgLower.includes('auto ')) {
+      const isEnabled = msgLower.includes('on');
       await supabase.from('businesses').update({ auto_reply_5_stars: isEnabled }).eq('id', biz.id);
       responseText = isPT 
-        ? `✅ Resposta automática de 5⭐ agora está: *${isEnabled ? 'ON' : 'OFF'}*`
-        : `✅ La respuesta automática de 5⭐ ahora está: *${isEnabled ? 'ON' : 'OFF'}*`;
+        ? `✅ Resposta automática agora está: *${isEnabled ? 'ON' : 'OFF'}*`
+        : `✅ La respuesta automática ahora está: *${isEnabled ? 'ON' : 'OFF'}*`;
     }
 
-    // COMANDO: CAMBIO DE TONO (TONO / TOM)
-    else if (msgLower.startsWith('tono ') || msgLower.startsWith('tom ')) {
-      const newTone = msgLower.split(" ")[1];
-      if (['friendly', 'professional'].includes(newTone)) {
-        await supabase.from('businesses').update({ reply_tone: newTone }).eq('id', biz.id);
-        responseText = isPT 
-          ? `✅ Tom atualizado para: *${newTone}*` 
-          : `✅ Tono actualizado a: *${newTone}*`;
-      }
-    }
-
-    // COMANDO: CONFIRMACIÓN DE PUBLICACIÓN (SI / SIM)
-    else if (msgLower === 'si' || msgLower === 'sim') {
-      const { data: lastLog } = await supabase
+    // PUBLICAR (SI / SIM) - Mejora con .includes() para evitar fallos por espacios
+    else if (msgLower === 'si' || msgLower === 'sim' || msgLower.startsWith('si ') || msgLower.startsWith('sim ')) {
+      const { data: lastLog, error: logError } = await supabase
         .from('reviews_logs')
         .select('*')
         .eq('business_id', biz.id)
         .eq('status', 'pending_approval')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (lastLog) {
-        // ACTUALIZACIÓN DE LOG
+        // 1. Marcamos como posteado inmediatamente para evitar doble posteo
         await supabase.from('reviews_logs').update({ status: 'posted' }).eq('id', lastLog.id);
         
-        // TODO: Aquí llamarías a la función que publica físicamente en Google
-        responseText = isPT ? "✅ Publicado com sucesso!" : "✅ Publicado con éxito!";
+        // 2. Disparo a la función de publicación en Google
+        fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/google-publish`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 
+            'Content-Type': 'application/json' 
+          },
+          body: JSON.stringify({ 
+            review_name: lastLog.review_name, 
+            reply: lastLog.reply_text, 
+            business_id: biz.id 
+          })
+        }).catch(e => console.error("Error disparando publicación:", e));
+
+        responseText = isPT ? "✅ Publicado no Google Maps!" : "✅ ¡Publicado en Google Maps!";
       } else {
-        responseText = isPT ? "❌ Nenhuma sugestão pendente encontrada." : "❌ No encontré sugerencias pendientes.";
+        responseText = isPT ? "❌ Nenhuma sugestão pendente para aprovar." : "❌ No encontré ninguna sugerencia pendiente para aprobar.";
       }
     }
 
-    // 4. Enviar respuesta final
+    // 4. Envío de respuesta final al usuario vía Evolution API
     if (responseText) {
-      await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/ranko-test`, {
+      await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
         method: 'POST',
-        headers: { 'apikey': evoApiKey, 'Content-Type': 'application/json' },
+        headers: { 'apikey': evoApiKey!, 'Content-Type': 'application/json' },
         body: JSON.stringify({ number: senderPhone, text: responseText })
       });
     }

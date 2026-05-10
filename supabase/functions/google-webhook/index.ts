@@ -9,19 +9,25 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const rawData = JSON.parse(atob(body.message.data));
-    const { locationName, reviewName } = rawData;
+    if (!body.message?.data) return new Response("No data", { status: 200 });
 
-    // 1. Buscamos el negocio y su configuración regional
-    const { data: biz } = await supabase
+    const rawData = JSON.parse(atob(body.message.data));
+    const { locationName, reviewId } = rawData;
+
+    if (!locationName || !reviewId) return new Response("Not a review notification", { status: 200 });
+    
+    const reviewName = `${locationName}/reviews/${reviewId}`;
+
+    // 1. Buscamos el negocio
+    const { data: biz, error: bizError } = await supabase
       .from("businesses")
-      .select("id, google_access_token, google_refresh_token, language, country_code, auto_reply_5_stars")
-      .eq("google_location_id", locationName)
+      .select("id, google_refresh_token, language")
+      .eq("google_location_id", locationName) 
       .single();
 
-    if (!biz) return new Response("Business not found", { status: 200 });
+    if (!biz || bizError) return new Response("Business not found", { status: 200 });
 
-    // 2. Refrescar Token (Determinismo: Aseguramos la conexión)
+    // 2. Refrescar Token de Google
     const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       body: JSON.stringify({
@@ -33,39 +39,47 @@ serve(async (req) => {
     });
     const { access_token } = await refreshRes.json();
 
-    // 3. Obtener la reseña
+    // 3. Obtener la reseña real de Google
     const reviewRes = await fetch(`https://mybusiness.googleapis.com/v4/${reviewName}`, {
       headers: { "Authorization": `Bearer ${access_token}` }
     });
     const reviewData = await reviewRes.json();
 
-    // 4. Llamar a la IA con el idioma del negocio
-    const aiResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-reply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        business_id: biz.id, 
-        review_text: reviewData.comment, 
-        stars: reviewData.starRating,
-        language: biz.language // <--- CRÍTICO: Aquí le decimos a la IA en qué idioma hablar
+    // 4. Guardar en la DB (reviews)
+    // Esto es vital para que 'process-new-review' encuentre el registro
+    const { data: newReview, error: insError } = await supabase
+      .from("reviews")
+      .insert({
+        business_id: biz.id,
+        google_review_id: reviewId,
+        star_rating: reviewData.starRating === "FIVE" ? 5 : 
+                     reviewData.starRating === "FOUR" ? 4 : 
+                     reviewData.starRating === "THREE" ? 3 : 
+                     reviewData.starRating === "TWO" ? 2 : 1,
+        comment_text: reviewData.comment || "",
+        reviewer_name: reviewData.reviewer?.displayName || "Cliente",
+        review_name: reviewName
       })
-    });
-    const { reply } = await aiResponse.json();
+      .select()
+      .single();
 
-    // 5. Publicar en Google
-    await fetch(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, {
-      method: "PUT",
+    if (insError) throw insError;
+
+    // 5. DISPARAR EL PROCESO DE WHATSAPP (El eslabón perdido)
+    // Llamamos a 'process-new-review' para que genere la respuesta y te avise al celu
+    fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/process-new-review`, {
+      method: "POST",
       headers: { 
-        "Authorization": `Bearer ${access_token}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
       },
-      body: JSON.stringify({ comment: reply })
-    });
+      body: JSON.stringify({ review_id: newReview.id })
+    }).catch(e => console.error("Error disparando process-new-review:", e));
 
     return new Response("OK", { status: 200 });
 
   } catch (err) {
     console.error("Webhook Error:", err);
-    return new Response("Error", { status: 500 });
+    return new Response("Error", { status: 200 });
   }
 });

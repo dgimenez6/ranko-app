@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // 1. Manejo de CORS
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const supabase = createClient(
@@ -21,7 +22,7 @@ serve(async (req) => {
   if (!code || !userId) return new Response("Missing parameters", { status: 400 });
 
   try {
-    // 1. Intercambiar código por tokens
+    // 2. Intercambio de código por tokens (OAuth2)
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -37,7 +38,7 @@ serve(async (req) => {
     const tokens = await tokenResponse.json();
     if (tokens.error) throw new Error(`Token Error: ${tokens.error_description}`);
 
-    // 2. DESCUBRIMIENTO DINÁMICO: Obtener la cuenta de Google Business del usuario
+    // 3. Descubrimiento de cuenta de Business Profile
     const accountsRes = await fetch("https://mybusinessbusinessinformation.googleapis.com/v1/accounts", {
       headers: { Authorization: `Bearer ${tokens.access_token}` }
     });
@@ -47,43 +48,43 @@ serve(async (req) => {
       throw new Error("No se encontró una cuenta de Google Business Profile.");
     }
 
-    // Usamos la primera cuenta disponible (usualmente la Personal)
+    // Seleccionamos la cuenta principal (usualmente la Personal)
     const accountName = accountsData.accounts[0].name;
 
-    // 3. Obtener locales vinculados a esa cuenta
-    const locRes = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,languageCode`, {
+    // 4. Obtención de locales (con pageSize aumentado para no perder datos)
+    const locRes = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,languageCode&pageSize=100`, {
       headers: { Authorization: `Bearer ${tokens.access_token}` }
     });
     
     const locData = await locRes.json();
 
     if (!locData.locations || locData.locations.length === 0) {
-      throw new Error("No se encontraron locales físicos en esta cuenta.");
+      throw new Error("No se encontraron locales físicos vinculados.");
     }
 
-    // 4. Upsert de locales en Supabase
+    // 5. Upsert de locales con formato Opción A (ID completo)
     for (const loc of locData.locations) {
-      // Lógica bilingüe automática: detecta Brasil por idioma o nombre del local
+      // Detección regional automática: Búzios o idioma portugués
       const isPT = loc.languageCode === 'pt' || loc.title.toLowerCase().includes('buzios');
       
       await supabase
         .from("businesses")
         .upsert({
           user_id: userId,
-          google_location_id: loc.name,
+          google_location_id: loc.name, // Guarda el path completo: accounts/xxx/locations/yyy
           business_name: loc.title,
           google_access_token: tokens.access_token,
-          // Solo actualizamos el refresh_token si Google nos manda uno nuevo
+          // Actualiza refresh_token solo si Google lo provee
           ...(tokens.refresh_token && { google_refresh_token: tokens.refresh_token }),
           connection_status: 'connected',
           language: isPT ? 'pt' : 'es',
+          country_code: isPT ? 'BR' : 'AR', // Asignación de país para el voseo de la IA
           last_sync_at: new Date().toISOString()
         }, { onConflict: 'google_location_id' });
     }
 
-    // 5. REDIRECCIÓN PRO: Volvemos a la landing para el paso del WhatsApp
-    // Reemplaza con tu URL real de producción cuando la tengas
-    const targetUrl = "http://localhost:3000"; 
+    // 6. Redirección final a producción
+    const targetUrl = "https://rankoai.com/dashboard"; // Cambiado de localhost a producción
     return Response.redirect(targetUrl, 302);
 
   } catch (err) {

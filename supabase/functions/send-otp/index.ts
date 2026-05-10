@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Manejo de CORS para llamadas desde la Landing
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const supabase = createClient(
@@ -18,16 +17,15 @@ serve(async (req) => {
   try {
     const { phone, language } = await req.json();
 
-    // 1. Limpieza de número de teléfono (evitar espacios o caracteres extra)
-    const cleanPhone = phone.replace(/\D/g, '');
+    // 1. Limpieza y validación (Mantiene el código de país)
+    const cleanPhone = phone.replace(/\+/g, '').replace(/\s/g, '');
     if (cleanPhone.length < 10) throw new Error("Número de teléfono inválido");
     
-    // 2. Generar código de 4 dígitos
+    // 2. Generar OTP robusto
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    // 3. Guardar en user_sessions
-    // Usamos el service_role para saltar RLS en esta tabla de sistema
+    // 3. Persistencia en la sesión
     const { error: dbError } = await supabase
       .from('user_sessions')
       .upsert({ 
@@ -39,20 +37,20 @@ serve(async (req) => {
 
     if (dbError) throw new Error(`Database Error: ${dbError.message}`);
 
-    // 4. Mensaje localizado (Soporte nativo AR/BR)
-    const isPT = language === 'pt';
+    // 4. i18n Inteligente (Detección por prefijo si no viene el language)
+    const isPT = language === 'pt' || cleanPhone.startsWith('55');
     const message = isPT
       ? `Seu código de verificação Ranko é: *${otp}* 🚀`
       : `Tu código de verificación de Ranko es: *${otp}* 🚀`;
 
     // 5. Envío vía Evolution API
-    // Usamos variables de entorno para la API Key por seguridad
-    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY') || '2EBE5DA7F3DB-43F1-998A-0616AE7E510F';
+    const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test';
+    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
     
-    const evoResponse = await fetch("https://evolution-api-production-0695.up.railway.app/message/sendText/ranko-test", {
+    const evoResponse = await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
       method: 'POST',
       headers: { 
-        'apikey': evoApiKey, 
+        'apikey': evoApiKey!, 
         'Content-Type': 'application/json' 
       },
       body: JSON.stringify({
@@ -62,11 +60,11 @@ serve(async (req) => {
     });
 
     if (!evoResponse.ok) {
-      const errorData = await evoResponse.json();
+      const errorData = await evoResponse.json().catch(() => ({}));
       throw new Error(`Evolution API Error: ${errorData.message || evoResponse.statusText}`);
     }
 
-    return new Response(JSON.stringify({ success: true, message: "OTP enviado" }), {
+    return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200
     });

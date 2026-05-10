@@ -29,16 +29,19 @@ serve(async (req) => {
     }
 
     const phone = biz.whatsapp_configs.phone_number;
-    const isPT = biz.language === 'pt'; //
+    const isPT = biz.language === 'pt'; 
+    
+    // Usamos el Secret para la API Key, con el fallback que tenías solo por seguridad
     const evoApiKey = Deno.env.get('EVOLUTION_API_KEY') || '2EBE5DA7F3DB-43F1-998A-0616AE7E510F';
+    const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test';
 
-    // 2. Mensajes bilingües con formato enriquecido
+    // 2. Mensajes bilingües optimizados (Voseo para Argentina / Portugués para Búzios)
     const message = isPT
       ? `Olá! Sou o *Ranko*, seu novo assistente de hospitalidade para *${biz.business_name}*. 🚀\n\nJá estou conectado ao seu Google Business. A partir de agora:\n✅ Responderei automaticamente as avaliações positivas (4 e 5⭐).\n🔔 Se chegar uma crítica, avisarei você por aqui com uma sugestão.\n\nDigite *AJUDA* a qualquer momento para ver meus comandos. Bem-vindo!`
       : `¡Hola! Soy *Ranko*, tu nuevo asistente de hospitalidad para *${biz.business_name}*. 🚀\n\nYa estoy conectado a tu Google Business. A partir de ahora:\n✅ Voy a responder solo todas las reseñas positivas (4 y 5⭐).\n🔔 Si llega una crítica, te aviso por acá con una sugerencia para que decidamos juntos.\n\nEscribí *AYUDA* en cualquier momento para ver qué puedo hacer. ¡Bienvenido a bordo!`;
 
-    // 3. Envío profesional vía Evolution API
-    const evoResponse = await fetch("https://evolution-api-production-0695.up.railway.app/message/sendText/ranko-test", {
+    // 3. Envío profesional vía Evolution API usando la instancia de los Secrets
+    const evoResponse = await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
       method: 'POST',
       headers: { 
         'apikey': evoApiKey, 
