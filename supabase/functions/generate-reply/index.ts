@@ -7,10 +7,8 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // 1. Manejo de CORS
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  // 2. Validación de Seguridad (Solo permite llamadas con Service Role Key)
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.includes(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')) {
     return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401, headers: corsHeaders });
@@ -27,7 +25,7 @@ serve(async (req) => {
     const { business_id, review_text, stars, language } = await req.json();
     const cleanBusinessId = business_id?.trim();
 
-    // 3. Obtener configuración del negocio
+    // 1. Obtener configuración completa del negocio (incluyendo el Cerebro y Switches)
     const { data: business, error } = await supabase
       .from("businesses")
       .select("*")
@@ -36,7 +34,19 @@ serve(async (req) => {
 
     if (error || !business) throw new Error(`Negocio no encontrado: ${cleanBusinessId}`);
 
-    // 4. Lógica de Créditos y Suscripción
+    // 2. LÓGICA DE AUTOMATIZACIÓN SELECTIVA
+    // Verificamos si debemos contestar según las estrellas y la configuración del dueño
+    const isHighRating = stars >= 4;
+    const shouldAutoReply = isHighRating ? business.auto_reply_5_stars : business.notify_negative_reviews;
+
+    if (shouldAutoReply === false) {
+      return new Response(JSON.stringify({ 
+        reply: "SKIP: Automatización desactivada para esta calificación.", 
+        status: "skipped_by_config" 
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // 3. Lógica de Créditos y Suscripción
     const isTrial = business.plan_status === 'trial';
     const hasCredits = business.plan_status === 'active' || (isTrial && (business.credits_used || 0) < 5);
 
@@ -52,26 +62,30 @@ serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 5. Configuración de Idioma y Tono dinámico
+    // 4. Configuración del SYSTEM PROMPT con el CEREBRO (business_info)
     const lang = business.language || language || 'es';
     const isPT = lang === 'pt';
     const tone = business.reply_tone || (isPT ? 'profissional e amigável' : 'profesional y amable');
     
-    // Ajuste regional para Argentina o Brasil
     const regionContext = business.country_code === 'AR' 
       ? "Respondé en Español con modismos de Argentina (usá 'voseo': vení, atendé, che, etc.)." 
       : isPT ? "Responda em Português do Brasil de forma natural." : "Respondé en Español neutro y amable.";
 
+    // Inyectamos el Cerebro y la Promo en las instrucciones
     const systemPrompt = `Sos el encargado de atención al cliente de "${business.business_name}". 
-    Tu objetivo es responder reseñas de Google Maps.
-    Instrucciones:
+    
+    CONTEXTO SOBRE EL NEGOCIO (Usalo para dar respuestas personalizadas):
+    ${business.business_info || 'Un comercio dedicado a brindar la mejor atención.'}
+    
+    INSTRUCCIONES:
     - Tono: ${tone}.
-    - Si la reseña es de 4-5 estrellas: Agradecé efusivamente e invitá a volver.
-    - Si la reseña es de 1-3 estrellas: Mostrá empatía, pedí disculpas y pedí que contacten al privado para solucionar el problema.
+    - Si la reseña es de 4-5 estrellas: Agradecé efusivamente e invitá a volver. ${business.promo_text ? `Mencioná esta promo: ${business.promo_text}` : ''}
+    - Si la reseña es de 1-3 estrellas: Mostrá empatía, pedí disculpas y pedí que contacten al privado.
     - ${regionContext}
-    - Mantené la respuesta breve (máximo 3 párrafos).`;
+    - Mantené la respuesta breve (máximo 2-3 párrafos).
+    - No inventes servicios que no estén en el contexto del negocio.`;
 
-    // 6. Generación con GPT-4o-mini
+    // 5. Generación con GPT-4o-mini
     const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
@@ -90,7 +104,7 @@ serve(async (req) => {
 
     const reply = aiData.choices[0].message.content.trim();
 
-    // 7. Registro de logs y actualización de consumo
+    // 6. Registro de logs y actualización de consumo
     const newCredits = (business.credits_used || 0) + 1;
     
     await Promise.all([

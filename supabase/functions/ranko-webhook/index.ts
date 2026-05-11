@@ -1,20 +1,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Diccionario de Interfaz (Dashboard en el bolsillo)
 const i18n = {
   es: { 
-    pauso: "⏸️ Automatización pausada", activo: "▶️ Automatización activa", gestionando: "✅ Gestionando:", 
-    listado: "Tenés varios locales. Elegí uno:", alerta: "⚠️ ALERTA: Reseña negativa en",
-    bienvenida: "¡Hola! Soy *Ranko*, tu asistente de reputación. Gestionarás tus negocios desde aquí.\n\nComandos:\n/menu - Cambiar de local\n/status - Estado del bot\n/pause - Pausar respuestas\n/resume - Activar respuestas",
-    error: "❌ Hubo un error procesando tu solicitud.", ayuda: "💬 Entendido. ¿Necesitás ayuda con algo o es una reseña?",
-    estado: "Estado", plan: "Plan", prueba: "Prueba", premium: "Premium 💎"
+    pauso: "⏸️ Automatización pausada", 
+    activo: "▶️ Automatización activa", 
+    gestionando: "✅ Gestionando ahora:", 
+    listado: "Tenés varios locales vinculados. Elegí uno enviando el número:", 
+    alerta: "⚠️ ALERTA: Nueva reseña en",
+    bienvenida: "¡Hola! Soy *Ranko AI*, tu asistente de reputación. Desde acá podés controlar tus negocios.\n\n🚀 *Comandos Rápidos:*\n/menu - Ver mis locales\n/status - Estado del bot y plan\n/pause - Pausar respuestas\n/resume - Activar respuestas",
+    error: "❌ Hubo un error procesando tu solicitud.", 
+    ayuda: "💬 Entendido. ¿Necesitás ayuda con algo o querés que responda una reseña?",
+    estado: "Estado", plan: "Plan", prueba: "Prueba", premium: "Premium 💎",
+    cerebro: "Cerebro IA"
   },
   pt: { 
-    pauso: "⏸️ Automação pausada", activo: "▶️ Automação ativa", gestionando: "✅ Gerenciando:", 
-    listado: "Você tem vários locais. Escolha um:", alerta: "⚠️ ALERTA: Avaliação negativa em",
-    bienvenida: "Olá! Sou o *Ranko*, seu assistente de reputação. Você gerenciará seus negócios daqui.\n\nComandos:\n/menu - Trocar de local\n/status - Status do bot\n/pause - Pausar respostas\n/resume - Ativar respostas",
-    error: "❌ Ocorreu um erro ao processar sua solicitação.", ajuda: "💬 Entendido. Precisa de ajuda com algo ou é uma avaliação?",
-    estado: "Status", plan: "Plano", prueba: "Teste", premium: "Premium 💎"
+    pauso: "⏸️ Automação pausada", 
+    activo: "▶️ Automação ativa", 
+    gestionando: "✅ Gerenciando agora:", 
+    listado: "Você tem vários locais vinculados. Escolha um enviando o número:", 
+    alerta: "⚠️ ALERTA: Nova avaliação em",
+    bienvenida: "Olá! Sou o *Ranko AI*, seu assistente de reputação. Daqui você gerencia seus negócios.\n\n🚀 *Comandos Rápidos:*\n/menu - Ver meus locais\n/status - Status do bot e plano\n/pause - Pausar respostas\n/resume - Ativar respostas",
+    error: "❌ Ocorreu um erro ao processar sua solicitação.", 
+    ayuda: "💬 Entendido. Precisa de ajuda com algo ou quer que eu responda uma avaliação?",
+    estado: "Status", plan: "Plano", prueba: "Teste", premium: "Premium 💎",
+    cerebro: "Cérebro IA"
   }
 };
 
@@ -27,20 +38,21 @@ serve(async (req) => {
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const payload = await req.json();
   
-  // Ignorar estados de lectura o notificaciones que no sean mensajes nuevos
   if (payload.event !== "messages.upsert" || payload.data.key.fromMe) return new Response("OK", { status: 200 });
 
   const senderPhone = payload.data.key.remoteJid.split("@")[0];
   const text = (payload.data.message.conversation || payload.data.message.extendedTextMessage?.text || "").trim();
 
   try {
+    // 1. Obtener todos los negocios vinculados a este teléfono
     const { data: configs } = await supabase
       .from("whatsapp_configs")
-      .select("business_id, businesses(id, business_name, is_active, reply_tone, language, country_code, plan_status, credits_used)")
+      .select("business_id, businesses(*)")
       .eq("phone_number", senderPhone);
 
     if (!configs || configs.length === 0) return new Response("OK", { status: 200 });
 
+    // 2. Gestionar la sesión activa del usuario
     const { data: session } = await supabase.from("user_sessions").select("active_business_id").eq("phone", senderPhone).maybeSingle();
     
     if (!session) {
@@ -57,10 +69,11 @@ serve(async (req) => {
     const lang = biz.language === 'pt' ? 'pt' : 'es';
     const t = i18n[lang];
 
-    // Lógica de Comandos
+    // --- LÓGICA DE COMANDOS ---
+
     if (text === "/menu") {
       const lista = configs.map((c, i) => `${i + 1}. ${c.businesses.business_name}`).join("\n");
-      await sendWhatsApp(senderPhone, `${t.listado}\n\n${lista}`);
+      await sendWhatsApp(senderPhone, `🏢 *${t.listado}*\n\n${lista}`);
       return new Response("OK", { status: 200 });
     }
 
@@ -69,8 +82,8 @@ serve(async (req) => {
       if (configs[index]) {
         await supabase.from("user_sessions").upsert({ phone: senderPhone, active_business_id: configs[index].business_id });
         const newBiz = configs[index].businesses;
-        const newT = i18n[newBiz.language === 'pt' ? 'pt' : 'es'];
-        await sendWhatsApp(senderPhone, `${newT.gestionando} *${newBiz.business_name}*`);
+        const newLang = newBiz.language === 'pt' ? 'pt' : 'es';
+        await sendWhatsApp(senderPhone, `${i18n[newLang].gestionando} *${newBiz.business_name}*`);
         return new Response("OK", { status: 200 });
       }
     }
@@ -87,39 +100,48 @@ serve(async (req) => {
       else if (text === "/status") { 
         const statusIcon = biz.is_active ? '✅' : '⏸️';
         const planInfo = biz.plan_status === 'trial' ? `(${t.prueba}: ${biz.credits_used}/5)` : `(${t.premium})`;
-        await sendWhatsApp(senderPhone, `⚙️ *${biz.business_name}*\n- ${t.estado}: ${statusIcon}\n- ${t.plan}: ${planInfo}`); 
+        const brainIcon = biz.business_info ? '🧠 ON' : '❌ OFF';
+        
+        await sendWhatsApp(senderPhone, `⚙️ *RANKO STATUS: ${biz.business_name}*\n\n- ${t.estado}: ${statusIcon}\n- ${t.plan}: ${planInfo}\n- ${t.cerebro}: ${brainIcon}\n- Tono: ${biz.reply_tone}`); 
       }
       return new Response("OK", { status: 200 });
     }
 
-    // Respuesta con IA
+    // --- RESPUESTA CON IA USANDO EL CEREBRO ---
     if (biz.is_active) {
       if (text.length < 10) {
         await sendWhatsApp(senderPhone, t.ayuda);
       } else {
+        // Llamada a la función de generación que ya tiene el CEREBRO integrado
         const aiResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-reply`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` // <-- CRÍTICO
+            "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` 
           },
           body: JSON.stringify({ business_id: biz.id, review_text: text, stars: 5, language: lang })
         });
 
         const aiResult = await aiResponse.json();
-        const msg = aiResult.status === "limit_reached" ? aiResult.reply : `🤖 *Ranko (${biz.business_name}):*\n\n${aiResult.reply}`;
+        const msg = aiResult.status === "limit_reached" ? aiResult.reply : `🤖 *Ranko AI (${biz.business_name}):*\n\n${aiResult.reply}`;
         
         await sendWhatsApp(senderPhone, msg);
+        
         if (aiResult.status !== "limit_reached") {
-          await supabase.from("message_logs").insert({ business_id: biz.id, user_phone: senderPhone, incoming_text: text, ai_reply: aiResult.reply });
+          await supabase.from("message_logs").insert({ 
+            business_id: biz.id, 
+            user_phone: senderPhone, 
+            incoming_text: text, 
+            ai_reply: aiResult.reply 
+          });
         }
       }
     } else {
-      await sendWhatsApp(senderPhone, `${t.pauso} (Use /resume para activar)`);
+      await sendWhatsApp(senderPhone, `⚠️ *${biz.business_name}* está pausado.\nUse /resume para activar.`);
     }
 
   } catch (e) {
-    console.error("Error en Webhook:", e);
+    console.error("Error en Webhook de WhatsApp:", e);
     await sendWhatsApp(senderPhone, i18n.es.error);
   }
   return new Response("OK", { status: 200 });

@@ -17,7 +17,7 @@ serve(async (req) => {
   try {
     const payload = await req.json();
     
-    // 1. Extracción y limpieza profunda del mensaje
+    // 1. Extracción del mensaje (Compatible con Evolution API)
     const incomingMessage = (payload.data?.message?.conversation || 
                              payload.data?.message?.extendedTextMessage?.text || "").trim();
     const senderPhone = payload.data?.key?.remoteJid?.split('@')[0];
@@ -25,52 +25,64 @@ serve(async (req) => {
     const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
     const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test';
 
-    // 2. Identificar al dueño y el negocio (Validación de Sesión)
-    const { data: userSession, error: sessionError } = await supabase
-      .from('user_sessions')
-      .select('active_business_id, businesses(*)')
-      .eq('phone', senderPhone)
+    // 2. Identificar al dueño (Validación de Sesión vinculada al negocio)
+    // Nota: El dueño debe estar en la tabla 'whatsapp_configs' para que esto sea seguro
+    const { data: biz, error: bizError } = await supabase
+      .from('businesses')
+      .select(`
+        *,
+        whatsapp_configs!inner(phone_number)
+      `)
+      .eq('whatsapp_configs.phone_number', senderPhone)
       .maybeSingle();
 
-    if (sessionError || !userSession || !userSession.businesses) {
-      console.log(`Teléfono no registrado: ${senderPhone}`);
-      return new Response("No registrado", { status: 200 });
+    if (bizError || !biz) {
+      console.log(`Teléfono no autorizado para comandos: ${senderPhone}`);
+      return new Response("No autorizado", { status: 200 });
     }
 
-    const biz = userSession.businesses;
     const isPT = biz.language === 'pt'; 
     const msgLower = incomingMessage.toLowerCase();
     let responseText = "";
 
-    // 3. Lógica de Comandos Robusta
+    // 3. Lógica de Comandos (Ajustada para las nuevas funciones)
     
     // AYUDA / MENU
     if (['ayuda', 'ajuda', '/start', 'help', 'menu'].some(cmd => msgLower.includes(cmd))) {
       responseText = isPT 
-        ? `🤖 *Ranko Assistente (${biz.business_name})*\n\nComandos:\n👉 *STATUS*: Ver configs\n👉 *AUTO ON/OFF*: Resposta auto\n👉 *TOM [amigável/profissional]*: Mudar tom\n👉 *SIM*: Publicar sugestão`
-        : `🤖 *Ranko Asistente (${biz.business_name})*\n\nComandos:\n👉 *STATUS*: Ver config actual\n👉 *AUTO ON/OFF*: Respuesta auto\n👉 *TONO [amigable/profesional]*: Cambiar tono\n👉 *SI*: Publicar sugerencia`;
+        ? `🤖 *Ranko Assistente (${biz.business_name})*\n\nComandos:\n👉 *STATUS*: Ver configs\n👉 *AUTO ON/OFF*: Resposta auto 5⭐\n👉 *NOTIF ON/OFF*: Alertas de negativas\n👉 *SIM*: Publicar sugestão`
+        : `🤖 *Ranko Asistente (${biz.business_name})*\n\nComandos:\n👉 *STATUS*: Ver config actual\n👉 *AUTO ON/OFF*: Respuesta auto 5⭐\n👉 *NOTIF ON/OFF*: Alertas de negativas\n👉 *SI*: Publicar sugerencia`;
     }
 
-    // STATUS
+    // STATUS (Incluye el Cerebro)
     else if (msgLower.includes('status')) {
-      const toneLabel = isPT ? (biz.reply_tone === 'friendly' ? 'Amigável' : 'Profissional') : (biz.reply_tone === 'friendly' ? 'Amigable' : 'Profesional');
+      const brainStatus = biz.business_info ? (isPT ? 'TREINADO ✅' : 'ENTRENADO ✅') : (isPT ? 'VAZIO ❌' : 'VACÍO ❌');
       responseText = isPT
-        ? `📊 *Status de ${biz.business_name}:*\n• Tom: *${toneLabel}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? '✅' : '❌'}*\n• Plano: *${biz.plan_status?.toUpperCase()}*`
-        : `📊 *Status de ${biz.business_name}:*\n• Tono: *${toneLabel}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? '✅' : '❌'}*\n• Plan: *${biz.plan_status?.toUpperCase()}*`;
+        ? `📊 *Status de ${biz.business_name}:*\n• Tom: *${biz.reply_tone}*\n• Cérebro: *${brainStatus}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? 'ON' : 'OFF'}*\n• Alertas Negativas: *${biz.notify_negative_reviews ? 'ON' : 'OFF'}*`
+        : `📊 *Status de ${biz.business_name}:*\n• Tono: *${biz.reply_tone}*\n• Cerebro: *${brainStatus}*\n• Auto-Reply 5⭐: *${biz.auto_reply_5_stars ? 'ON' : 'OFF'}*\n• Alertas Negativas: *${biz.notify_negative_reviews ? 'ON' : 'OFF'}*`;
     }
 
-    // AUTO-REPLY (ON/OFF)
+    // AUTO-REPLY 5 ESTRELLAS
     else if (msgLower.includes('auto ')) {
       const isEnabled = msgLower.includes('on');
       await supabase.from('businesses').update({ auto_reply_5_stars: isEnabled }).eq('id', biz.id);
       responseText = isPT 
-        ? `✅ Resposta automática agora está: *${isEnabled ? 'ON' : 'OFF'}*`
-        : `✅ La respuesta automática ahora está: *${isEnabled ? 'ON' : 'OFF'}*`;
+        ? `✅ Resposta automática 5⭐: *${isEnabled ? 'ON' : 'OFF'}*`
+        : `✅ Respuesta automática 5⭐: *${isEnabled ? 'ON' : 'OFF'}*`;
     }
 
-    // PUBLICAR (SI / SIM) - Mejora con .includes() para evitar fallos por espacios
+    // NOTIFICACIONES NEGATIVAS
+    else if (msgLower.includes('notif ')) {
+      const isEnabled = msgLower.includes('on');
+      await supabase.from('businesses').update({ notify_negative_reviews: isEnabled }).eq('id', biz.id);
+      responseText = isPT 
+        ? `✅ Alertas de negativas: *${isEnabled ? 'ON' : 'OFF'}*`
+        : `✅ Alertas de negativas: *${isEnabled ? 'ON' : 'OFF'}*`;
+    }
+
+    // PUBLICAR (SI / SIM)
     else if (msgLower === 'si' || msgLower === 'sim' || msgLower.startsWith('si ') || msgLower.startsWith('sim ')) {
-      const { data: lastLog, error: logError } = await supabase
+      const { data: lastLog } = await supabase
         .from('reviews_logs')
         .select('*')
         .eq('business_id', biz.id)
@@ -80,10 +92,9 @@ serve(async (req) => {
         .maybeSingle();
 
       if (lastLog) {
-        // 1. Marcamos como posteado inmediatamente para evitar doble posteo
         await supabase.from('reviews_logs').update({ status: 'posted' }).eq('id', lastLog.id);
         
-        // 2. Disparo a la función de publicación en Google
+        // Disparamos la publicación real
         fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/google-publish`, {
           method: 'POST',
           headers: { 
@@ -95,15 +106,15 @@ serve(async (req) => {
             reply: lastLog.reply_text, 
             business_id: biz.id 
           })
-        }).catch(e => console.error("Error disparando publicación:", e));
+        }).catch(e => console.error("Error publicando:", e));
 
-        responseText = isPT ? "✅ Publicado no Google Maps!" : "✅ ¡Publicado en Google Maps!";
+        responseText = isPT ? "✅ Publicado com sucesso!" : "✅ ¡Publicado con éxito!";
       } else {
-        responseText = isPT ? "❌ Nenhuma sugestão pendente para aprovar." : "❌ No encontré ninguna sugerencia pendiente para aprobar.";
+        responseText = isPT ? "❌ Nada pendente." : "❌ No hay nada pendiente.";
       }
     }
 
-    // 4. Envío de respuesta final al usuario vía Evolution API
+    // 4. Envío vía Evolution API
     if (responseText) {
       await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
         method: 'POST',

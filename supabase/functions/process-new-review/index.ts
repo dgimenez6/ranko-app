@@ -9,12 +9,11 @@ serve(async (req) => {
 
   try {
     const payload = await req.json();
-    // Soporte tanto para triggers de DB como para llamadas directas
     const review_id = payload.record?.id || payload.review_id;
     
     if (!review_id) throw new Error("ID de reseña no proporcionado");
 
-    // 1. Obtener reseña y configuración regional
+    // 1. Obtener reseña y configuración completa (JOIN con businesses y configs)
     const { data: review, error: revError } = await supabase
       .from('reviews')
       .select(`
@@ -40,15 +39,27 @@ serve(async (req) => {
     const lang = biz.language || 'es';
     const isPT = lang === 'pt';
 
-    // 2. IA con contexto regional (Voseo para AR / Portugués para BR)
-    const tone = biz.reply_tone || 'profesional y amable';
+    // 2. IA con el CEREBRO y la PROMO del Dashboard
+    const tone = biz.reply_tone || 'professional';
+    
+    // Ajuste de Prompt para usar business_info y promo_text
     const regionPrompt = biz.country_code === 'AR' 
       ? "Respondé en Español de Argentina (usá voseo: vení, che, saludá)." 
       : isPT ? "Responda em Português do Brasil de forma natural." : "Respondé en Español neutro.";
 
-    const systemPrompt = isPT
-      ? `Você é o assistente de "${biz.business_name}". Tom: ${tone}. ${regionPrompt}`
-      : `Sos el asistente de "${biz.business_name}". Tono: ${tone}. ${regionPrompt}`;
+    const systemPrompt = `
+      Usted es el asistente inteligente de "${biz.business_name}". 
+      ${regionPrompt}
+      TONO: ${tone}.
+      
+      CONTEXTO DEL NEGOCIO (Usa esta información para personalizar la respuesta):
+      ${biz.business_info || 'Comercio dedicado a la excelente atención al cliente.'}
+      
+      REGLAS DE RESPUESTA:
+      1. Si la reseña es de 4 o 5 estrellas, agradece e intenta mencionar esta promoción: ${biz.promo_text || 'No hay promociones activas'}.
+      2. Si la reseña es menor a 4 estrellas, sé empático, discúlpate y pide que se contacten por privado.
+      3. Mantén la respuesta breve (máximo 2 párrafos).
+    `;
 
     // 3. Generar respuesta con GPT-4o-mini
     const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -70,9 +81,9 @@ serve(async (req) => {
     const aiData = await aiResponse.json();
     const reply = aiData.choices[0].message.content;
 
-    // 4. Lógica de Notificación vs Auto-Reply
-    const isAuto = (review.star_rating === 5 && biz.auto_reply_5_stars) || 
-                   (review.star_rating === 4 && biz.auto_reply_4_stars);
+    // 4. Lógica de Notificación vs Auto-Reply (Mapeada a tus nuevas columnas)
+    // Usamos auto_reply_5_stars del Dashboard
+    const isAuto = (review.star_rating >= 4 && biz.auto_reply_5_stars);
 
     let whatsappText = "";
     if (isAuto) {
@@ -80,7 +91,7 @@ serve(async (req) => {
         ? `✅ *Ranko Auto:* Respondi em *${biz.business_name}* (${review.star_rating}⭐):\n\n"${reply}"`
         : `✅ *Ranko Auto:* Respondí en *${biz.business_name}* (${review.star_rating}⭐):\n\n"${reply}"`;
       
-      // TODO: Aquí llamarías a la función de publicación en Google My Business
+      // TODO: Aquí invocarías la publicación real en Google My Business
     } else {
       whatsappText = isPT
         ? `🔔 *Nova Avaliação (${review.star_rating}⭐):*\n"${review.comment_text || '(Sem texto)'}"\n\n*Sugestão do Ranko:*\n"${reply}"\n\n¿Deseja publicar? (Responda "SIM")`
@@ -97,7 +108,7 @@ serve(async (req) => {
       body: JSON.stringify({ number: ownerPhone, text: whatsappText })
     });
 
-    // 6. Registro en Log
+    // 6. Registro en Log para el Happiness % del Dashboard
     await supabase.from("reviews_logs").insert({
       business_id: biz.id,
       stars: review.star_rating,
