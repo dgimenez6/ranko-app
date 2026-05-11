@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   ShieldCheck, MessageSquare, Zap, Star, Loader2, 
   Settings, Clock, Sparkles, QrCode, ArrowRight,
-  LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone
+  LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone, AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase/client';
@@ -18,7 +18,7 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalReplies: 0, avgRating: 0, happiness: 0, timeSaved: '0h' });
 
-  // ESTADOS DE CONFIGURACIÓN (Sincronizados con tu DB)
+  // ESTADOS DE CONFIGURACIÓN (Mapeados 1:1 con tu tabla business)
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [aiTone, setAiTone] = useState('professional');
   const [replyLang, setReplyLang] = useState('es');
@@ -26,10 +26,10 @@ export default function LandingPage() {
   const [bizInfo, setBizInfo] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [autoReply5, setAutoReply5] = useState(true); 
+  const [autoReplyLow, setAutoReplyLow] = useState(false); // Nueva lógica para < 5 estrellas
   const [notifyNegative, setNotifyNegative] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // DICCIONARIO BILINGÜE (Simplifica el código y permite traducción real)
   const translations: any = {
     es: {
       myBiz: "Mis Negocios", qr: "Marketing QR",
@@ -37,10 +37,11 @@ export default function LandingPage() {
       configTitle: "ESTRATEGIA IA",
       bizInfo: "Cerebro del Local", lang: "Idioma Interfaz",
       tone: "Tono IA", promo: "Promoción Activa",
-      whatsapp: "WhatsApp Alertas", autoHigh: "Auto-Responder 5 ⭐",
-      notifyNeg: "Notificar Negativas", saveBtn: "DEPLOYA ESTRATEGIA",
-      placeholderInfo: "Ej: Aceptamos Pix, especialidad en carnes...",
-      tooltip: "Info que usará la IA para que las respuestas sean únicas."
+      whatsapp: "WhatsApp Alertas", autoHigh: "Responder 5 ⭐",
+      autoLow: "Responder < 5 ⭐", notifyNeg: "Notificar Negativas",
+      saveBtn: "GUARDAR ESTRATEGIA",
+      placeholderInfo: "Ej: Especialidad en carnes, aceptamos Pix...",
+      tooltip: "Información que usará la IA para que las respuestas sean únicas."
     },
     pt: {
       myBiz: "Meus Negócios", qr: "Marketing QR",
@@ -48,9 +49,10 @@ export default function LandingPage() {
       configTitle: "ESTRATÉGIA IA",
       bizInfo: "Cérebro do Local", lang: "Idioma Interface",
       tone: "Tom da IA", promo: "Promoção Ativa",
-      whatsapp: "WhatsApp Alertas", autoHigh: "Auto-Responder 5 ⭐",
-      notifyNeg: "Notificar Negativas", saveBtn: "ATUALIZAR ESTRATÉGIA",
-      placeholderInfo: "Ex: Aceitamos Pix, especialidade em carnes...",
+      whatsapp: "WhatsApp Alertas", autoHigh: "Responder 5 ⭐",
+      autoLow: "Responder < 5 ⭐", notifyNeg: "Notificar Negativas",
+      saveBtn: "ATUALIZAR ESTRATÉGIA",
+      placeholderInfo: "Ex: Especialidade em carnes, aceitamos Pix...",
       tooltip: "Informação que a IA usará para respostas exclusivas."
     }
   };
@@ -73,33 +75,19 @@ export default function LandingPage() {
     if (!currentUser) return;
     const { data: bizData } = await supabase.from('businesses').select('*').eq('user_id', currentUser.id);
     setMyBusinesses(bizData || []);
-    
-    if (bizData && bizData.length > 0) {
-      const bizIds = bizData.map(b => b.id);
-      const { data: logs } = await supabase.from('reviews_logs').select('stars').in('business_id', bizIds);
-      if (logs) {
-        const total = logs.length;
-        const valid = logs.filter(l => l.stars != null);
-        setStats({
-          totalReplies: total,
-          avgRating: valid.length > 0 ? Number((valid.reduce((acc, curr) => acc + curr.stars, 0) / valid.length).toFixed(1)) : 0,
-          happiness: valid.length > 0 ? Math.round((valid.filter(l => l.stars >= 4).length / valid.length) * 100) : 0,
-          timeSaved: total > 0 ? `${Math.round((total * 5) / 60)}h` : '0h'
-        });
-      }
-      setStep('dashboard');
-    }
+    if (bizData && bizData.length > 0) setStep('dashboard');
   };
 
   const openConfig = (biz: any) => {
     setSelectedBusiness(biz);
-    // CARGA REAL DESDE TU TABLA (AQUÍ ESTABA EL ERROR)
+    // CARGAMOS TODO DESDE LA FILA DE LA DB
     setAiTone(biz.reply_tone || 'professional');
     setReplyLang(biz.language || 'es');
     setPromoText(biz.promo_text || '');
     setBizInfo(biz.business_info || '');
-    setWhatsappNumber(biz.whatsapp_number || '');
+    setWhatsappNumber(biz.whatsapp_number || ''); // Aquí traemos el teléfono
     setAutoReply5(biz.auto_reply_5_stars ?? true);
+    setAutoReplyLow(biz.auto_reply_low_stars ?? false); // Mapeo de la nueva lógica
     setNotifyNegative(biz.notify_negative_reviews ?? true);
   };
 
@@ -113,6 +101,7 @@ export default function LandingPage() {
       business_info: bizInfo,
       whatsapp_number: whatsappNumber,
       auto_reply_5_stars: autoReply5,
+      auto_reply_low_stars: autoReplyLow,
       notify_negative_reviews: notifyNegative
     }).eq('id', selectedBusiness.id);
 
@@ -132,14 +121,13 @@ export default function LandingPage() {
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48} /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
-      {/* NAV CON LOGIN/LOGOUT */}
+    <div className="min-h-screen bg-slate-950 text-white font-sans">
       <nav className="flex justify-between items-center px-6 md:px-12 py-6 border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
         <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent italic uppercase tracking-tighter">RANKO AI</div>
         {user ? (
-          <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-black uppercase border border-red-500/10 hover:bg-red-500/20 transition-all">SIGN OUT</button>
+          <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-black uppercase border border-red-500/10">SIGN OUT</button>
         ) : (
-          <button onClick={() => loginWithGoogle()} className="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-xs font-black uppercase border border-indigo-500/10 hover:bg-indigo-500/20 transition-all">LOGIN</button>
+          <button onClick={() => loginWithGoogle()} className="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-xs font-black uppercase border border-indigo-500/10">LOGIN</button>
         )}
       </nav>
 
@@ -161,35 +149,18 @@ export default function LandingPage() {
             </div>
 
             {activeTab === 'overview' ? (
-              <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-                  {[
-                    { label: t.stats[0], val: stats.totalReplies, icon: MessageSquare, col: 'text-indigo-400' },
-                    { label: t.stats[1], val: stats.avgRating || 'New', icon: Star, col: 'text-yellow-400' },
-                    { label: t.stats[2], val: `${stats.happiness}%`, icon: Heart, col: 'text-pink-400' },
-                    { label: t.stats[3], val: stats.timeSaved, icon: Clock, col: 'text-emerald-400' },
-                  ].map((m, i) => (
-                    <div key={i} className="p-8 bg-white/[0.02] border border-white/5 rounded-[2rem] hover:bg-white/[0.04] transition-all">
-                      <m.icon className={`${m.col} mb-4`} size={20} />
-                      <p className="text-4xl font-black mb-1 tracking-tighter">{m.val}</p>
-                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{m.label}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {myBusinesses.map((b) => (
-                    <div key={b.id} className="p-8 bg-white/[0.03] border border-white/10 rounded-[3rem] shadow-2xl flex flex-col group hover:border-indigo-500/50 transition-all">
-                      <h3 className="font-black text-2xl mb-8 italic uppercase tracking-tighter">{b.business_name}</h3>
-                      <button onClick={() => openConfig(b)} className="mt-auto w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all italic">
-                        <Settings size={14} /> {t.configTitle}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {myBusinesses.map((b) => (
+                  <div key={b.id} className="p-8 bg-white/[0.03] border border-white/10 rounded-[3rem] shadow-2xl flex flex-col group hover:border-indigo-500/50 transition-all">
+                    <h3 className="font-black text-2xl mb-8 italic uppercase tracking-tighter">{b.business_name}</h3>
+                    <button onClick={() => openConfig(b)} className="mt-auto w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all italic">
+                      <Settings size={14} /> {t.configTitle}
+                    </button>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-4">
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {myBusinesses.map(biz => (
                   <div key={biz.id} className="p-10 bg-white/5 border border-white/10 rounded-[3rem] text-center group hover:border-emerald-500/50 transition-all">
                     <QrCode size={48} className="mx-auto mb-6 text-indigo-400" />
@@ -204,32 +175,23 @@ export default function LandingPage() {
           </div>
         )}
 
-        {/* MODAL DE CONFIGURACIÓN BILINGÜE */}
         {selectedBusiness && (
           <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-[100] flex items-center justify-center p-6 overflow-y-auto">
             <div className="bg-slate-900 border border-white/10 w-full max-w-3xl rounded-[3rem] p-8 md:p-12 shadow-2xl my-auto animate-in zoom-in-95">
               <div className="flex justify-between items-center mb-10">
-                <h2 className="text-2xl font-black italic uppercase tracking-tighter">{t.configTitle}: {selectedBusiness.business_name}</h2>
+                <h2 className="text-2xl font-black italic uppercase tracking-tighter">{t.configTitle}</h2>
                 <button onClick={() => setSelectedBusiness(null)} className="text-slate-500 hover:text-white text-2xl">✕</button>
               </div>
 
               <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-6">
                   <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 italic"><BrainCircuit size={14} className="text-indigo-400"/> {t.bizInfo}</label>
-                      <div className="group/tooltip relative cursor-help">
-                        <HelpCircle size={14} className="text-slate-600" />
-                        <div className="absolute bottom-full right-0 mb-3 w-64 p-4 bg-slate-800 border border-indigo-500/30 rounded-2xl text-[10px] font-bold text-slate-300 hidden group-hover/tooltip:block shadow-2xl z-[110] animate-in fade-in">
-                          {t.tooltip}
-                        </div>
-                      </div>
-                    </div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3 italic"><BrainCircuit size={14} className="text-indigo-400"/> {t.bizInfo}</label>
                     <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.placeholderInfo} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs h-40 outline-none focus:border-indigo-500 transition-all font-bold resize-none" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3 italic"><Globe size={14} className="text-indigo-400"/> {t.lang}</label>
-                    <select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs font-bold outline-none appearance-none cursor-pointer hover:bg-white/10 transition-colors">
+                    <select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs font-bold outline-none appearance-none cursor-pointer uppercase">
                       <option value="es" className="bg-slate-900">Español 🇦🇷</option>
                       <option value="pt" className="bg-slate-900">Português 🇧🇷</option>
                       <option value="en" className="bg-slate-900">English 🇺🇸</option>
@@ -241,9 +203,9 @@ export default function LandingPage() {
                   <div>
                     <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3 italic"><Sparkles size={14} className="text-indigo-400"/> {t.tone}</label>
                     <select value={aiTone} onChange={(e) => setAiTone(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs font-bold outline-none appearance-none cursor-pointer uppercase">
-                      <option value="friendly" className="bg-slate-900">Friendly / Amigável</option>
-                      <option value="professional" className="bg-slate-900">Professional / Profissional</option>
-                      <option value="funny" className="bg-slate-900">Funny / Engraçado</option>
+                      <option value="friendly" className="bg-slate-900">Friendly</option>
+                      <option value="professional" className="bg-slate-900">Professional</option>
+                      <option value="funny" className="bg-slate-900">Funny</option>
                     </select>
                   </div>
                   <div>
@@ -257,22 +219,23 @@ export default function LandingPage() {
                 </div>
               </div>
 
+              {/* AUTOMATIZACIÓN */}
               <div className="grid md:grid-cols-2 gap-4 mt-10 pt-10 border-t border-white/5">
                 <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5">
-                  <span className="text-[10px] font-black uppercase italic tracking-tighter">{t.autoHigh}</span>
-                  <button onClick={() => setAutoReply5(!autoReply5)} className={`w-12 h-6 rounded-full relative transition-all ${autoReply5 ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-slate-700'}`}>
+                  <span className="text-[10px] font-black uppercase italic">{t.autoHigh}</span>
+                  <button onClick={() => setAutoReply5(!autoReply5)} className={`w-12 h-6 rounded-full relative transition-all ${autoReply5 ? 'bg-emerald-500' : 'bg-slate-700'}`}>
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReply5 ? 'right-1' : 'left-1'}`} />
                   </button>
                 </div>
                 <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5">
-                  <span className="text-[10px] font-black uppercase italic tracking-tighter">{t.notifyNeg}</span>
-                  <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-12 h-6 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-500 shadow-lg shadow-indigo-500/20' : 'bg-slate-700'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notifyNegative ? 'right-1' : 'left-1'}`} />
+                  <span className="text-[10px] font-black uppercase italic">{t.autoLow}</span>
+                  <button onClick={() => setAutoReplyLow(!autoReplyLow)} className={`w-12 h-6 rounded-full relative transition-all ${autoReplyLow ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReplyLow ? 'right-1' : 'left-1'}`} />
                   </button>
                 </div>
               </div>
 
-              <button onClick={saveSettings} disabled={isSaving} className="w-full mt-10 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-6 rounded-3xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/20 active:scale-95 text-sm uppercase italic tracking-tighter">
+              <button onClick={saveSettings} disabled={isSaving} className="w-full mt-10 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-6 rounded-3xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/20 active:scale-95 text-sm uppercase italic">
                 {isSaving ? <Loader2 className="animate-spin" /> : <><ShieldCheck size={20}/> {t.saveBtn}</>}
               </button>
             </div>
