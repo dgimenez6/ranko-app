@@ -18,7 +18,6 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'growth'>('overview');
   const [loading, setLoading] = useState(true);
   
-  // Métricas Reales
   const [stats, setStats] = useState({
     totalReplies: 0,
     avgRating: 0,
@@ -26,7 +25,6 @@ export default function LandingPage() {
     timeSaved: '0h'
   });
 
-  // Configuración de Negocio Seleccionado (Mapeado a tu DB)
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [aiTone, setAiTone] = useState('friendly');
   const [replyLang, setReplyLang] = useState('es');
@@ -50,7 +48,6 @@ export default function LandingPage() {
   const refreshUserStatus = async (currentUser: any) => {
     if (!currentUser) return;
     
-    // Traemos los locales con tus nombres de columna reales
     const { data: bizData } = await supabase
       .from('businesses')
       .select('*')
@@ -60,28 +57,38 @@ export default function LandingPage() {
     setMyBusinesses(businesses);
 
     if (businesses.length > 0) {
-      // Cálculo de métricas agregadas desde reviews_log
-      const { data: logs } = await supabase
-        .from('reviews_logs')
-        .select('stars')
-        .in('business_id', businesses.map(b => b.id));
+      try {
+        // Consulta simplificada para evitar errores 403 de RLS
+        const bizIds = businesses.map(b => b.id);
+        const { data: logs, error: logError } = await supabase
+          .from('reviews_logs')
+          .select('stars')
+          .in('business_id', bizIds);
 
-      const total = logs?.length || 0;
-      const avg = total > 0 ? (logs!.reduce((acc, curr) => acc + (curr.stars || 0), 0) / total).toFixed(1) : 0;
-      const happyPct = total > 0 ? Math.round((logs!.filter(l => (l.stars || 0) >= 4).length / total) * 100) : 0;
-      
-      setStats({
-        totalReplies: total,
-        avgRating: Number(avg),
-        happiness: happyPct,
-        timeSaved: total > 0 ? `${Math.round((total * 5) / 60)}h` : 'Est. 2h/wk'
-      });
-
+        if (!logError && logs) {
+          const total = logs.length;
+          const validStars = logs.filter(l => l.stars != null);
+          const avg = validStars.length > 0 
+            ? (validStars.reduce((acc, curr) => acc + curr.stars, 0) / validStars.length).toFixed(1) 
+            : 0;
+          const happyPct = validStars.length > 0 
+            ? Math.round((validStars.filter(l => l.stars >= 4).length / validStars.length) * 100) 
+            : 0;
+          
+          setStats({
+            totalReplies: total,
+            avgRating: Number(avg),
+            happiness: happyPct,
+            timeSaved: total > 0 ? `${Math.round((total * 5) / 60)}h` : 'Est. 2h/wk'
+          });
+        }
+      } catch (e) {
+        console.error("Error cargando métricas:", e);
+      }
       setStep('dashboard');
     }
   };
 
-  // Cargar config real desde tu tabla business al abrir el modal
   const openConfig = (biz: any) => {
     setSelectedBusiness(biz);
     setAiTone(biz.reply_tone || 'friendly');
@@ -94,7 +101,6 @@ export default function LandingPage() {
     if (!selectedBusiness) return;
     setIsSaving(true);
     
-    // Mapeo exacto a tus columnas de la base de datos
     const { error } = await supabase
       .from('businesses')
       .update({ 
@@ -108,36 +114,28 @@ export default function LandingPage() {
     if (!error) {
       await refreshUserStatus(user);
       setSelectedBusiness(null);
-      alert("Configuración guardada en producción.");
     } else {
-      console.error("Error updating settings:", error);
       alert(`Error al guardar: ${error.message}`);
     }
     setIsSaving(false);
   };
 
   const downloadQR = (biz: any) => {
-    // Generamos un QR dinámico que apunta al link de reseñas de Google
-    const googleReviewUrl = biz.review_url || `https://search.google.com/local/writereview?placeid=${biz.google_location_id?.split('/').pop()}`;
+    const bizId = biz.google_location_id?.split('/').pop() || biz.id;
+    const googleReviewUrl = biz.review_url || `https://search.google.com/local/writereview?placeid=${bizId}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(googleReviewUrl)}`;
     window.open(qrUrl, '_blank');
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/';
   };
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48} /></div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
-      {/* Nav */}
       <nav className="flex justify-between items-center px-6 md:px-12 py-6 border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent tracking-tighter uppercase">RANKO AI</div>
+        <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent tracking-tighter italic">RANKO AI</div>
         <div className="flex items-center gap-4">
           {user && (
-            <button onClick={handleSignOut} className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-black uppercase hover:bg-red-500/20 transition-all">
+            <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-black uppercase hover:bg-red-500/20 transition-all">
               SIGN OUT
             </button>
           )}
@@ -147,13 +145,9 @@ export default function LandingPage() {
       <main className="max-w-6xl mx-auto px-6 pb-20">
         {step === 'hero' && (
           <div className="pt-24 text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold mb-8">
-              <Sparkles size={14} /> THE GOLD STANDARD FOR REPUTATION
-            </div>
-            <h1 className="text-6xl md:text-8xl font-black mb-8 tracking-tighter leading-tight italic uppercase">Global AI. <br/><span className="text-indigo-500 font-black">Local Heart.</span></h1>
-            <p className="text-xl text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed uppercase font-black tracking-widest text-xs">Escalá tu reputación en Argentina y Brasil con inteligencia real.</p>
+            <h1 className="text-6xl md:text-8xl font-black mb-8 tracking-tighter italic uppercase">Global AI. <br/><span className="text-indigo-500">Local Heart.</span></h1>
             <button onClick={() => loginWithGoogle()} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-bold px-12 py-6 rounded-3xl shadow-[0_0_40px_rgba(79,70,229,0.3)] transition-all flex items-center gap-4 mx-auto group">
-              Access My Console <ArrowRight className="group-hover:translate-x-1 transition-transform" />
+              Access My Console <ArrowRight />
             </button>
           </div>
         )}
@@ -187,23 +181,21 @@ export default function LandingPage() {
                     <div key={b.id} className="p-8 bg-white/[0.03] border border-white/10 rounded-[3rem] group hover:border-indigo-500/50 transition-all flex flex-col h-full shadow-2xl">
                       <div className="flex justify-between items-start mb-8">
                         <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400"><Store size={24} /></div>
-                        <span className="text-[10px] font-black text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full uppercase tracking-tighter">Monitoring</span>
+                        <span className="text-[10px] font-black text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full uppercase tracking-tighter">Live</span>
                       </div>
                       <h3 className="font-black text-2xl mb-8 tracking-tighter italic uppercase">{b.business_name}</h3>
-                      
                       <div className="space-y-2 mb-8 flex-grow">
                         <div className="flex justify-between p-4 bg-white/5 rounded-2xl text-[10px] font-black uppercase tracking-tighter border border-white/5">
                           <span className="text-slate-500">Tone</span>
-                          <span className="text-indigo-400">{b.reply_tone || 'Friendly'}</span>
+                          <span className="text-indigo-400">{b.reply_tone || 'friendly'}</span>
                         </div>
                         <div className="flex justify-between p-4 bg-white/5 rounded-2xl text-[10px] font-black uppercase tracking-tighter border border-white/5">
-                          <span className="text-slate-500">Marketing</span>
+                          <span className="text-slate-500">Promo</span>
                           <span className={b.promo_text ? "text-emerald-400" : "text-slate-600"}>{b.promo_text ? "ACTIVE" : "OFF"}</span>
                         </div>
                       </div>
-
-                      <button onClick={() => openConfig(b)} className="w-full py-4 bg-white/5 hover:bg-indigo-600 text-white rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 group/btn border border-white/5 hover:border-indigo-400">
-                        <Settings size={14} className="group-hover/btn:rotate-90 transition-transform" /> CONFIGURE LOCAL
+                      <button onClick={() => openConfig(b)} className="w-full py-4 bg-white/5 hover:bg-indigo-600 text-white rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 border border-white/5 hover:border-indigo-400 group/btn">
+                        <Settings size={14} className="group-hover/btn:rotate-90 transition-transform" /> CONFIGURE
                       </button>
                     </div>
                   ))}
@@ -215,9 +207,8 @@ export default function LandingPage() {
                   <div key={biz.id} className="p-10 bg-white/5 border border-white/10 rounded-[3rem] flex flex-col items-center text-center">
                     <div className="w-16 h-16 bg-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-center mb-6"><QrCode size={32} /></div>
                     <h3 className="text-2xl font-black mb-2 italic uppercase tracking-tighter">{biz.business_name}</h3>
-                    <p className="text-xs text-slate-500 mb-8 max-w-xs font-bold uppercase tracking-widest">Descargá tu Smart QR para capturar reseñas positivas en el local.</p>
                     <button onClick={() => downloadQR(biz)} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xs uppercase hover:bg-indigo-500 transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-600/20">
-                      <Zap size={16}/> GENERATE KIT
+                      <Zap size={16}/> GENERATE SMART QR
                     </button>
                   </div>
                 ))}
@@ -231,18 +222,18 @@ export default function LandingPage() {
             <div className="bg-slate-900 border border-white/10 w-full max-w-xl rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95">
               <div className="flex justify-between items-start mb-10">
                 <div>
-                   <h2 className="text-3xl font-black italic tracking-tighter uppercase">STRATEGY SETTINGS</h2>
+                   <h2 className="text-3xl font-black italic tracking-tighter uppercase">LOCAL SETTINGS</h2>
                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">{selectedBusiness.business_name}</p>
                 </div>
-                <button onClick={() => setSelectedBusiness(null)} className="w-10 h-10 flex items-center justify-center bg-white/5 rounded-full text-slate-500 hover:text-white">✕</button>
+                <button onClick={() => setSelectedBusiness(null)} className="text-slate-500 hover:text-white">✕</button>
               </div>
 
               <div className="space-y-8">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 block">AI Personality</label>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 block italic">AI Personality</label>
                   <div className="grid grid-cols-2 gap-2">
                     {['Professional', 'Friendly', 'Concise', 'Witty'].map(t => (
-                      <button key={t} onClick={() => setAiTone(t)} className={`py-3 rounded-xl font-black text-[10px] transition-all border ${aiTone.toLowerCase() === t.toLowerCase() ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-white/5 border-white/5 text-slate-400 hover:border-white/10'}`}>
+                      <button key={t} onClick={() => setAiTone(t.toLowerCase())} className={`py-3 rounded-xl font-black text-[10px] transition-all border ${aiTone.toLowerCase() === t.toLowerCase() ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-white/5 border-white/5 text-slate-400 hover:border-white/10'}`}>
                         {t.toUpperCase()}
                       </button>
                     ))}
@@ -252,9 +243,9 @@ export default function LandingPage() {
                 <div>
                   <div className="flex items-center gap-2 mb-4">
                     <Megaphone size={14} className="text-emerald-400" />
-                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Active Upsell (Only for 5-Star Reviews)</label>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest italic italic">Active Promo for 5-Stars</label>
                   </div>
-                  <input type="text" placeholder="Ej: Te esperamos los martes con 10% off..." value={promoText} onChange={(e) => setPromoText(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-indigo-500 font-black text-xs" />
+                  <input type="text" placeholder="Ej: 10% off Martes..." value={promoText} onChange={(e) => setPromoText(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-indigo-500 font-black text-xs" />
                 </div>
 
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center">
@@ -262,7 +253,7 @@ export default function LandingPage() {
                     <div className="w-10 h-10 bg-red-500/20 text-red-400 rounded-xl flex items-center justify-center"><AlertTriangle size={18} /></div>
                     <div>
                       <p className="text-xs font-black uppercase italic italic">Guard Mode</p>
-                      <p className="text-[9px] text-slate-500 font-black uppercase">Notificarme por WhatsApp ante críticas negativas</p>
+                      <p className="text-[9px] text-slate-500 font-black uppercase">WhatsApp Alerts for Negative Reviews</p>
                     </div>
                   </div>
                   <button onClick={() => setEmergencyAlerts(!emergencyAlerts)} className={`w-12 h-6 rounded-full transition-all relative ${emergencyAlerts ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-700'}`}>
@@ -271,7 +262,7 @@ export default function LandingPage() {
                 </div>
 
                 <button onClick={saveSettings} disabled={isSaving} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/20 active:scale-95">
-                  {isSaving ? <Loader2 className="animate-spin" /> : <><ShieldCheck size={20}/> DEPLOY TO PRODUCTION</>}
+                  {isSaving ? <Loader2 className="animate-spin" /> : <><ShieldCheck size={20}/> DEPLOY STRATEGY</>}
                 </button>
               </div>
             </div>
