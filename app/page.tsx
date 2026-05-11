@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { 
-  ShieldCheck, MessageSquare, Zap, ArrowRight, CheckCircle2, 
-  Star, Loader2, LogOut, Store, Settings, Activity, Clock, 
-  ChevronRight, Sparkles, TrendingUp, AlertTriangle, QrCode, 
-  BarChart3, LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone
+  ShieldCheck, MessageSquare, Zap, Star, Loader2, 
+  Settings, Clock, Sparkles, QrCode, ArrowRight,
+  LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase/client';
@@ -17,18 +16,17 @@ export default function LandingPage() {
   const [step, setStep] = useState<'hero' | 'dashboard'>('hero');
   const [activeTab, setActiveTab] = useState<'overview' | 'growth'>('overview');
   const [loading, setLoading] = useState(true);
-  
   const [stats, setStats] = useState({ totalReplies: 0, avgRating: 0, happiness: 0, timeSaved: '0h' });
 
-  // ESTADOS DE CONFIGURACIÓN
+  // ESTADOS SINCRONIZADOS CON TU DB REAL
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [aiTone, setAiTone] = useState('professional');
   const [replyLang, setReplyLang] = useState('es');
   const [promoText, setPromoText] = useState('');
   const [bizInfo, setBizInfo] = useState('');
-  const [whatsappNumber, setWhatsappNumber] = useState(''); // Viene de whatsapp_configs
+  const [whatsappNumber, setWhatsappNumber] = useState(''); 
   const [autoReply5, setAutoReply5] = useState(true); 
-  const [autoReplyLow, setAutoReplyLow] = useState(false);  
+  const [notifyNegative, setNotifyNegative] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   const translations: any = {
@@ -38,8 +36,10 @@ export default function LandingPage() {
       configTitle: "ESTRATEGIA IA",
       bizInfo: "Cerebro del Local", lang: "Idioma Interfaz",
       tone: "Tono IA", promo: "Promoción Activa",
-      whatsapp: "WhatsApp Alertas", autoHigh: "Responder 5 ⭐",
-      autoLow: "Responder < 5 ⭐", saveBtn: "DEPLOYA ESTRATEGIA"
+      whatsapp: "WhatsApp Alertas", autoHigh: "Auto-Responder 5 ⭐",
+      notifyNeg: "Responder < 5 ⭐", saveBtn: "GUARDAR ESTRATEGIA",
+      placeholderInfo: "Ej: Especialidad en carnes, aceptamos Pix...",
+      tooltip: "Info que usará la IA para que las respuestas sean únicas."
     },
     pt: {
       myBiz: "Meus Negócios", qr: "Marketing QR",
@@ -47,15 +47,16 @@ export default function LandingPage() {
       configTitle: "ESTRATÉGIA IA",
       bizInfo: "Cérebro do Local", lang: "Idioma Interface",
       tone: "Tom da IA", promo: "Promoção Ativa",
-      whatsapp: "WhatsApp Alertas", autoHigh: "Responder 5 ⭐",
-      autoLow: "Responder < 5 ⭐", saveBtn: "ATUALIZAR ESTRATÉGIA"
+      whatsapp: "WhatsApp Alertas", autoHigh: "Auto-Responder 5 ⭐",
+      notifyNeg: "Responder < 5 ⭐", saveBtn: "ATUALIZAR ESTRATÉGIA",
+      placeholderInfo: "Ex: Aceitamos Pix, especialidade em carnes...",
+      tooltip: "Informação que a IA usará para respostas exclusivas."
     }
   };
 
   const t = translations[replyLang] || translations.es;
 
   useEffect(() => {
-    document.title = "Ranko AI | Business Dashboard";
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
@@ -92,21 +93,19 @@ export default function LandingPage() {
 
   const openConfig = async (biz: any) => {
     setSelectedBusiness(biz);
-    
-    // 1. Cargamos datos básicos del negocio
+    // CARGAMOS DESDE TUS COLUMNAS REALES
     setAiTone(biz.reply_tone || 'professional');
     setReplyLang(biz.language || 'es');
     setPromoText(biz.promo_text || '');
     setBizInfo(biz.business_info || '');
     setAutoReply5(biz.auto_reply_5_stars ?? true);
-    setAutoReplyLow(biz.auto_reply_low_stars ?? false);
+    setNotifyNegative(biz.notify_negative_reviews ?? true);
 
-    // 2. Buscamos el teléfono en la tabla whatsapp_configs (COMO ME PEDISTE)
     const { data: waConfig } = await supabase
       .from('whatsapp_configs')
       .select('phone_number')
       .eq('business_id', biz.id)
-      .single();
+      .maybeSingle(); // Usamos maybeSingle para evitar error si no existe aún
     
     setWhatsappNumber(waConfig?.phone_number || '');
   };
@@ -115,14 +114,14 @@ export default function LandingPage() {
     if (!selectedBusiness) return;
     setIsSaving(true);
 
-    // 1. Guardar en tabla businesses
+    // 1. Guardar en tabla businesses (Mapeo corregido)
     const { error: bizError } = await supabase.from('businesses').update({ 
       reply_tone: aiTone, 
       language: replyLang,
       promo_text: promoText,
       business_info: bizInfo,
       auto_reply_5_stars: autoReply5,
-      auto_reply_low_stars: autoReplyLow
+      notify_negative_reviews: notifyNegative // Mapeado a tu columna real
     }).eq('id', selectedBusiness.id);
 
     // 2. Guardar en tabla whatsapp_configs
@@ -138,7 +137,8 @@ export default function LandingPage() {
       await refreshUserStatus(user);
       setSelectedBusiness(null);
     } else {
-      alert("Error saving some settings.");
+      console.error("Biz Error:", bizError, "WA Error:", waError);
+      alert("Error saving: check console for column names.");
     }
     setIsSaving(false);
   };
@@ -155,17 +155,10 @@ export default function LandingPage() {
     <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
       <nav className="flex justify-between items-center px-6 md:px-12 py-6 border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
         <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent italic tracking-tighter uppercase">RANKO AI</div>
-        {user && <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-black uppercase border border-red-500/10">SIGN OUT</button>}
+        {user && <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-black uppercase border border-red-500/10 hover:bg-red-500/20 transition-all">SIGN OUT</button>}
       </nav>
 
       <main className="max-w-6xl mx-auto px-6 pb-20">
-        {step === 'hero' && (
-          <div className="pt-24 text-center">
-            <h1 className="text-6xl md:text-8xl font-black mb-8 tracking-tighter italic uppercase italic tracking-tighter italic tracking-tighter italic tracking-tighter">AI Reputation.<br/><span className="text-indigo-500">Zero Effort.</span></h1>
-            <button onClick={() => loginWithGoogle()} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-bold px-12 py-6 rounded-3xl transition-all flex items-center gap-4 mx-auto group shadow-xl shadow-indigo-500/20 uppercase italic tracking-tighter">Acceder ahora <ArrowRight /></button>
-          </div>
-        )}
-
         {step === 'dashboard' && (
           <div className="pt-12 animate-in fade-in duration-700">
             <div className="flex gap-2 mb-12 bg-white/5 p-1 rounded-2xl w-fit">
@@ -194,7 +187,7 @@ export default function LandingPage() {
                   {myBusinesses.map((b) => (
                     <div key={b.id} className="p-8 bg-white/[0.03] border border-white/10 rounded-[3rem] shadow-2xl flex flex-col group hover:border-indigo-500/50 transition-all">
                       <h3 className="font-black text-2xl mb-8 italic uppercase tracking-tighter">{b.business_name}</h3>
-                      <button onClick={() => openConfig(b)} className="mt-auto w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all italic tracking-tighter">
+                      <button onClick={() => openConfig(b)} className="mt-auto w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all italic tracking-tighter shadow-lg shadow-indigo-600/20">
                         <Settings size={14} /> {t.configTitle}
                       </button>
                     </div>
@@ -202,10 +195,10 @@ export default function LandingPage() {
                 </div>
               </>
             ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-4">
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {myBusinesses.map(biz => (
                   <div key={biz.id} className="p-10 bg-white/5 border border-white/10 rounded-[3rem] text-center group hover:border-emerald-500/50 transition-all">
-                    <QrCode size={48} className="mx-auto mb-6 text-indigo-400" />
+                    <QrCode size={48} className="mx-auto mb-6 text-indigo-400 group-hover:scale-110 transition-transform" />
                     <h3 className="text-2xl font-black mb-6 italic uppercase tracking-tighter">{biz.business_name}</h3>
                     <button onClick={() => downloadQR(biz)} className="w-full py-5 bg-emerald-500 text-slate-950 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-3 hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 italic tracking-tighter">
                       <Zap size={16}/> GENERAR QR SMART
@@ -229,7 +222,7 @@ export default function LandingPage() {
                 <div className="space-y-6">
                   <div>
                     <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3 italic tracking-tighter"><BrainCircuit size={14} className="text-indigo-400"/> {t.bizInfo}</label>
-                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder="Ej: Especialidad en carnes, aceptamos Pix..." className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs h-40 outline-none focus:border-indigo-500 transition-all font-bold resize-none" />
+                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.placeholderInfo} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs h-40 outline-none focus:border-indigo-500 transition-all font-bold resize-none" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3 italic tracking-tighter"><Globe size={14} className="text-indigo-400"/> {t.lang}</label>
@@ -262,16 +255,16 @@ export default function LandingPage() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-4 mt-10 pt-10 border-t border-white/5">
-                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5">
+                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 group hover:border-emerald-500/30 transition-all">
                   <span className="text-[10px] font-black uppercase italic tracking-tighter">{t.autoHigh}</span>
                   <button onClick={() => setAutoReply5(!autoReply5)} className={`w-12 h-6 rounded-full relative transition-all ${autoReply5 ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-slate-700'}`}>
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReply5 ? 'right-1' : 'left-1'}`} />
                   </button>
                 </div>
-                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5">
-                  <span className="text-[10px] font-black uppercase italic tracking-tighter">{t.autoLow}</span>
-                  <button onClick={() => setAutoReplyLow(!autoReplyLow)} className={`w-12 h-6 rounded-full relative transition-all ${autoReplyLow ? 'bg-indigo-500 shadow-lg shadow-indigo-500/20' : 'bg-slate-700'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReplyLow ? 'right-1' : 'left-1'}`} />
+                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 group hover:border-indigo-500/30 transition-all">
+                  <span className="text-[10px] font-black uppercase italic tracking-tighter">{t.notifyNeg}</span>
+                  <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-12 h-6 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-500 shadow-lg shadow-indigo-500/20' : 'bg-slate-700'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notifyNegative ? 'right-1' : 'left-1'}`} />
                   </button>
                 </div>
               </div>
