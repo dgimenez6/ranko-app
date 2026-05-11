@@ -17,7 +17,7 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'growth'>('overview');
   const [stats, setStats] = useState({ totalReplies: 0, avgRating: 0, happiness: 0, timeSaved: '0h' });
 
-  // CONFIGURACIÓN
+ // CONFIGURACIÓN
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [replyLang, setReplyLang] = useState('es');
   const [bizInfo, setBizInfo] = useState('');
@@ -25,6 +25,9 @@ export default function LandingPage() {
   const [autoReply5, setAutoReply5] = useState(true); 
   const [notifyNegative, setNotifyNegative] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  // AGREGAMOS ESTOS DOS QUE FALTABAN:
+  const [aiTone, setAiTone] = useState('friendly');
+  const [promoText, setPromoText] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -69,24 +72,42 @@ export default function LandingPage() {
     setNotifyNegative(biz.notify_negative ?? true);
   };
 
-  const saveSettings = async () => {
+const saveSettings = async () => {
     if (!selectedBusiness) return;
     setIsSaving(true);
     try {
-      await supabase.from('businesses').update({
-        language: replyLang,
-        business_info: bizInfo,
-        is_active: autoReply5,
-        notify_negative: notifyNegative
-      }).eq('id', selectedBusiness.id);
-      
-      await supabase.from('whatsapp_configs').upsert({
-        business_id: selectedBusiness.id,
-        phone_number: whatsappNumber
-      }, { onConflict: 'business_id' });
+      // Mapeo exacto a las columnas de tu tabla businesses
+      const { error: bizError } = await supabase
+        .from('businesses')
+        .update({
+          language: replyLang,
+          business_info: bizInfo,
+          reply_tone: aiTone,               
+          promo_text: promoText,             
+          auto_reply_5_stars: autoReply5,    
+          notify_negative_reviews: notifyNegative, 
+          is_active: autoReply5             
+        })
+        .eq('id', selectedBusiness.id);
 
-      alert('Settings saved successfully');
-    } catch (e) { alert('Error saving settings'); } finally { setIsSaving(false); }
+      if (bizError) throw bizError;
+      
+      const { error: waError } = await supabase
+        .from('whatsapp_configs')
+        .upsert({
+          business_id: selectedBusiness.id,
+          phone_number: whatsappNumber
+        }, { onConflict: 'business_id' });
+
+      if (waError) throw waError;
+
+      alert('Settings saved successfully!');
+    } catch (e: any) {
+      console.error('Error saving settings:', e.message);
+      alert(`Error: ${e.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
