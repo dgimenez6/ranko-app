@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { 
-  ShieldCheck, MessageSquare, Zap, ArrowRight, CheckCircle2, 
-  Star, Loader2, LogOut, Store, Settings, Activity, Clock, 
-  ChevronRight, Sparkles, TrendingUp, AlertTriangle, QrCode, 
-  BarChart3, LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone
+  ShieldCheck, MessageSquare, Zap, ArrowRight, Star, Loader2, 
+  Store, Settings, Activity, Clock, Sparkles, QrCode, 
+  LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase/client';
@@ -17,29 +16,47 @@ export default function LandingPage() {
   const [step, setStep] = useState<'hero' | 'dashboard'>('hero');
   const [activeTab, setActiveTab] = useState<'overview' | 'growth'>('overview');
   const [loading, setLoading] = useState(true);
-  
-  // Métricas Reales
-  const [stats, setStats] = useState({
-    totalReplies: 0,
-    avgRating: 0,
-    happiness: 0,
-    timeSaved: '0h'
-  });
+  const [stats, setStats] = useState({ totalReplies: 0, avgRating: 0, happiness: 0, timeSaved: '0h' });
 
-  // ESTADOS DE CONFIGURACIÓN (Sincronizados con tu DB)
+  // ESTADOS DE CONFIGURACIÓN (Mapeados a tu tabla real)
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
-  const [aiTone, setAiTone] = useState('friendly');
+  const [aiTone, setAiTone] = useState('professional');
   const [replyLang, setReplyLang] = useState('es');
   const [promoText, setPromoText] = useState('');
   const [bizInfo, setBizInfo] = useState('');
-  const [whatsappNumber, setWhatsappNumber] = useState('');
-  const [autoReplyHigh, setAutoReplyHigh] = useState(true); 
-  const [autoReplyLow, setAutoReplyLow] = useState(false);  
-  const [emergencyAlerts, setEmergencyAlerts] = useState(true);
+  const [autoReply5Stars, setAutoReply5Stars] = useState(true); 
+  const [notifyNegative, setNotifyNegative] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  // DICCIONARIO BILINGÜE
+  const translations: any = {
+    es: {
+      myBiz: "Mis Negocios", qr: "Marketing QR",
+      stats: ["Respuestas", "Rating", "Felicidad", "Ahorro"],
+      configTitle: "CONFIGURACIÓN ESTRATÉGICA",
+      bizInfo: "Cerebro del Comercio", lang: "Idioma",
+      tone: "Tono de IA", promo: "Promoción de Ventas",
+      autoHigh: "Auto-Responder 5 ⭐", notifyNeg: "Alertas WhatsApp",
+      saveBtn: "ACTUALIZAR PRODUCCIÓN",
+      placeholderInfo: "Ej: Especialidad en carnes, aceptamos Pix...",
+      tooltip: "Info que la IA usará para que las respuestas no sean genéricas."
+    },
+    pt: {
+      myBiz: "Meus Negócios", qr: "Marketing QR",
+      stats: ["Respostas", "Avaliação", "Felicidade", "Tempo"],
+      configTitle: "CONFIGURAÇÃO ESTRATÉGICA",
+      bizInfo: "Cérebro do Comércio", lang: "Idioma",
+      tone: "Tom da IA", promo: "Promoção de Vendas",
+      autoHigh: "Auto-Responder 5 ⭐", notifyNeg: "Alertas WhatsApp",
+      saveBtn: "ATUALIZAR PRODUÇÃO",
+      placeholderInfo: "Ex: Especialidade em carnes, aceitamos Pix...",
+      tooltip: "Informações que a IA usará para que as respostas não sejam genéricas."
+    }
+  };
+
+  const t = translations[replyLang] || translations.es;
+
   useEffect(() => {
-    document.title = "Ranko AI | Business Dashboard";
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
@@ -54,11 +71,10 @@ export default function LandingPage() {
   const refreshUserStatus = async (currentUser: any) => {
     if (!currentUser) return;
     const { data: bizData } = await supabase.from('businesses').select('*').eq('user_id', currentUser.id);
-    const businesses = bizData || [];
-    setMyBusinesses(businesses);
-
-    if (businesses.length > 0) {
-      const bizIds = businesses.map(b => b.id);
+    setMyBusinesses(bizData || []);
+    
+    if (bizData && bizData.length > 0) {
+      const bizIds = bizData.map(b => b.id);
       const { data: logs } = await supabase.from('reviews_logs').select('stars').in('business_id', bizIds);
       if (logs) {
         const total = logs.length;
@@ -74,17 +90,15 @@ export default function LandingPage() {
     }
   };
 
-  // ESTA ES LA FUNCIÓN CLAVE: Carga los datos de la DB al estado de React
   const openConfig = (biz: any) => {
     setSelectedBusiness(biz);
-    setAiTone(biz.reply_tone || 'friendly');
+    // MAPEAMOS LAS COLUMNAS EXACTAS DE TU TABLA
+    setAiTone(biz.reply_tone || 'professional');
     setReplyLang(biz.language || 'es');
     setPromoText(biz.promo_text || '');
     setBizInfo(biz.business_info || '');
-    setWhatsappNumber(biz.whatsapp_number || '');
-    setAutoReplyHigh(biz.auto_reply_high ?? true);
-    setAutoReplyLow(biz.auto_reply_low ?? false);
-    setEmergencyAlerts(biz.notify_negative_reviews ?? true);
+    setAutoReply5Stars(biz.auto_reply_5_stars ?? true);
+    setNotifyNegative(biz.notify_negative_reviews ?? true);
   };
 
   const saveSettings = async () => {
@@ -95,10 +109,8 @@ export default function LandingPage() {
       language: replyLang,
       promo_text: promoText,
       business_info: bizInfo,
-      whatsapp_number: whatsappNumber,
-      auto_reply_high: autoReplyHigh,
-      auto_reply_low: autoReplyLow,
-      notify_negative_reviews: emergencyAlerts 
+      auto_reply_5_stars: autoReply5Stars,
+      notify_negative_reviews: notifyNegative
     }).eq('id', selectedBusiness.id);
 
     if (!error) {
@@ -119,29 +131,28 @@ export default function LandingPage() {
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48} /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans">
+    <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
       <nav className="flex justify-between items-center px-6 md:px-12 py-6 border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent italic tracking-tighter uppercase">RANKO AI</div>
-        {user && <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-black uppercase border border-red-500/10">SIGN OUT</button>}
+        <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent italic uppercase tracking-tighter">RANKO AI</div>
+        {user && <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-black uppercase border border-red-500/10 hover:bg-red-500/20 transition-all">SIGN OUT</button>}
       </nav>
 
       <main className="max-w-6xl mx-auto px-6 pb-20">
         {step === 'dashboard' && (
           <div className="pt-12 animate-in fade-in duration-700">
-            {/* TABS PRINCIPALES */}
             <div className="flex gap-2 mb-12 bg-white/5 p-1 rounded-2xl w-fit">
-              <button onClick={() => setActiveTab('overview')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'overview' ? 'bg-indigo-600 shadow-lg' : 'text-slate-500 hover:text-white'}`}><LayoutDashboard size={14} /> Mis Negocios</button>
-              <button onClick={() => setActiveTab('growth')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'growth' ? 'bg-indigo-600 shadow-lg' : 'text-slate-500 hover:text-white'}`}><QrCode size={14} /> Marketing QR</button>
+              <button onClick={() => setActiveTab('overview')} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all ${activeTab === 'overview' ? 'bg-indigo-600 shadow-lg' : 'text-slate-500'}`}><LayoutDashboard size={14}/> {t.myBiz}</button>
+              <button onClick={() => setActiveTab('growth')} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-all ${activeTab === 'growth' ? 'bg-indigo-600 shadow-lg' : 'text-slate-500'}`}><QrCode size={14}/> {t.qr}</button>
             </div>
 
             {activeTab === 'overview' ? (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
                   {[
-                    { label: 'Total Respuestas', val: stats.totalReplies || 'Listo', icon: MessageSquare, col: 'text-indigo-400' },
-                    { label: 'Rating Promedio', val: stats.avgRating > 0 ? stats.avgRating : 'Nuevo', icon: Star, col: 'text-yellow-400' },
-                    { label: 'Felicidad', val: `${stats.happiness}%`, icon: Heart, col: 'text-pink-400' },
-                    { label: 'Tiempo Ahorrado', val: stats.timeSaved, icon: Clock, col: 'text-emerald-400' },
+                    { label: t.stats[0], val: stats.totalReplies, icon: MessageSquare, col: 'text-indigo-400' },
+                    { label: t.stats[1], val: stats.avgRating || 'New', icon: Star, col: 'text-yellow-400' },
+                    { label: t.stats[2], val: `${stats.happiness}%`, icon: Heart, col: 'text-pink-400' },
+                    { label: t.stats[3], val: stats.timeSaved, icon: Clock, col: 'text-emerald-400' },
                   ].map((m, i) => (
                     <div key={i} className="p-8 bg-white/[0.02] border border-white/5 rounded-[2rem] hover:bg-white/[0.04] transition-all">
                       <m.icon className={`${m.col} mb-4`} size={20} />
@@ -153,20 +164,16 @@ export default function LandingPage() {
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {myBusinesses.map((b) => (
-                    <div key={b.id} className="p-8 bg-white/[0.03] border border-white/10 rounded-[3rem] group hover:border-indigo-500/50 transition-all flex flex-col h-full shadow-2xl">
+                    <div key={b.id} className="p-8 bg-white/[0.03] border border-white/10 rounded-[3rem] shadow-2xl flex flex-col group hover:border-indigo-500/50 transition-all">
                       <h3 className="font-black text-2xl mb-8 italic uppercase tracking-tighter">{b.business_name}</h3>
-                      <div className="space-y-3 mb-8 flex-grow text-[10px] font-black uppercase tracking-widest">
-                        <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                          <span className="text-slate-500 italic">Tono</span>
-                          <span className="text-indigo-400">{b.reply_tone || 'Friendly'}</span>
-                        </div>
-                        <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                          <span className="text-slate-500 italic">Idioma</span>
-                          <span className="text-emerald-400">{b.language?.toUpperCase() || 'ES'}</span>
+                      <div className="space-y-2 mb-8 flex-grow">
+                        <div className="flex justify-between p-4 bg-white/5 rounded-2xl text-[10px] font-black uppercase border border-white/5">
+                          <span className="text-slate-500">Brain Status</span>
+                          <span className={b.business_info ? "text-emerald-400" : "text-amber-400"}>{b.business_info ? "TRAINED" : "EMPTY"}</span>
                         </div>
                       </div>
-                      <button onClick={() => openConfig(b)} className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2">
-                        <Settings size={14} /> CONFIGURAR ESTRATEGIA
+                      <button onClick={() => openConfig(b)} className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all">
+                        <Settings size={14} /> {t.configTitle}
                       </button>
                     </div>
                   ))}
@@ -176,7 +183,7 @@ export default function LandingPage() {
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-4">
                 {myBusinesses.map(biz => (
                   <div key={biz.id} className="p-10 bg-white/5 border border-white/10 rounded-[3rem] text-center group hover:border-emerald-500/50 transition-all">
-                    <QrCode size={48} className="mx-auto mb-6 text-indigo-400 group-hover:scale-110 transition-transform" />
+                    <QrCode size={48} className="mx-auto mb-6 text-indigo-400" />
                     <h3 className="text-2xl font-black mb-6 italic uppercase tracking-tighter">{biz.business_name}</h3>
                     <button onClick={() => downloadQR(biz)} className="w-full py-5 bg-emerald-500 text-slate-950 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-3 hover:bg-emerald-400 transition-all">
                       <Zap size={16}/> GENERAR QR SMART
@@ -188,94 +195,71 @@ export default function LandingPage() {
           </div>
         )}
 
-        {/* MODAL DE CONFIGURACIÓN */}
         {selectedBusiness && (
           <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-[100] flex items-center justify-center p-6 overflow-y-auto">
             <div className="bg-slate-900 border border-white/10 w-full max-w-3xl rounded-[3rem] p-8 md:p-12 shadow-2xl my-auto animate-in zoom-in-95">
               <div className="flex justify-between items-center mb-10">
-                <h2 className="text-3xl font-black italic uppercase tracking-tighter">CONFIGURACIÓN IA: {selectedBusiness.business_name}</h2>
+                <h2 className="text-3xl font-black italic uppercase tracking-tighter">{t.configTitle}</h2>
                 <button onClick={() => setSelectedBusiness(null)} className="text-slate-500 hover:text-white text-2xl">✕</button>
               </div>
 
               <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-6">
-                  <div className="group relative">
+                  <div>
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2 italic"><BrainCircuit size={14} className="text-indigo-400"/> Información del Comercio</label>
+                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><BrainCircuit size={14}/> {t.bizInfo}</label>
                       <div className="group/tooltip relative cursor-help">
                         <HelpCircle size={14} className="text-slate-600" />
-                        <div className="absolute bottom-full right-0 mb-3 w-64 p-4 bg-slate-800 border border-indigo-500/30 rounded-2xl text-[10px] font-bold text-slate-300 hidden group-hover/tooltip:block shadow-2xl z-[110]">
-                          Explicá detalles de tu local: platos estrella, si aceptás mascotas, estacionamiento, etc. La IA usará esto para responder.
+                        <div className="absolute bottom-full right-0 mb-3 w-64 p-4 bg-slate-800 border border-indigo-500/30 rounded-2xl text-[10px] font-bold text-slate-300 hidden group-hover/tooltip:block shadow-2xl z-[110] animate-in fade-in">
+                          {t.tooltip}
                         </div>
                       </div>
                     </div>
-                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder="Ej: Somos un local en Búzios, aceptamos Pix, especialidad en carnes..." className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none focus:border-indigo-500 text-xs h-40 resize-none font-bold" />
+                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.placeholderInfo} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs h-40 outline-none focus:border-indigo-500 transition-all font-bold" />
                   </div>
-
-                  <div className="group relative">
-                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3 block flex items-center gap-2 italic"><Globe size={14} className="text-indigo-400"/> Idioma de Respuesta</label>
-                    <select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none focus:border-indigo-500 text-xs font-bold appearance-none">
-                      <option value="es" className="bg-slate-900">Español 🇦🇷</option>
-                      <option value="pt" className="bg-slate-900">Português 🇧🇷</option>
-                      <option value="en" className="bg-slate-900">English 🇺🇸</option>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3"><Globe size={14}/> {t.lang}</label>
+                    <select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs font-bold outline-none appearance-none">
+                      <option value="es">Español 🇦🇷</option>
+                      <option value="pt">Português 🇧🇷</option>
+                      <option value="en">English 🇺🇸</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  <div className="group relative">
-                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3 block flex items-center gap-2 italic"><Sparkles size={14} className="text-indigo-400"/> Tono de Personalidad</label>
-                    <select value={aiTone} onChange={(e) => setAiTone(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none focus:border-indigo-500 text-xs font-bold appearance-none">
-                      <option value="friendly" className="bg-slate-900">Amigable y Cálido</option>
-                      <option value="professional" className="bg-slate-900">Formal y Profesional</option>
-                      <option value="funny" className="bg-slate-900">Divertido e Informal</option>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3"><Sparkles size={14}/> {t.tone}</label>
+                    <select value={aiTone} onChange={(e) => setAiTone(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs font-bold outline-none appearance-none uppercase">
+                      <option value="friendly">Friendly / Amigável</option>
+                      <option value="professional">Professional / Profissional</option>
+                      <option value="funny">Funny / Engraçado</option>
                     </select>
                   </div>
-
-                  <div className="group relative">
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2 italic"><Megaphone size={14} className="text-emerald-400"/> Promoción Activa</label>
-                      <div className="group/tooltip relative cursor-help">
-                        <HelpCircle size={14} className="text-slate-600" />
-                        <div className="absolute bottom-full right-0 mb-3 w-64 p-4 bg-slate-800 border border-emerald-500/30 rounded-2xl text-[10px] font-bold text-slate-300 hidden group-hover/tooltip:block shadow-2xl z-[110]">
-                          Este texto se incluirá en respuestas de 5 estrellas. Ej: "Te esperamos el martes con 10% off!".
-                        </div>
-                      </div>
-                    </div>
-                    <input type="text" value={promoText} onChange={(e) => setPromoText(e.target.value)} placeholder="Ej: 10% off pagando en efectivo..." className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none focus:border-indigo-500 text-xs font-bold" />
-                  </div>
-
-                  <div className="group relative">
-                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3 block flex items-center gap-2 italic"><Phone size={14} className="text-emerald-400"/> WhatsApp para Alertas</label>
-                    <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="+54 9 11 1234 5678" className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none focus:border-indigo-500 text-xs font-bold" />
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 mb-3"><Megaphone size={14}/> {t.promo}</label>
+                    <input value={promoText} onChange={(e) => setPromoText(e.target.value)} type="text" placeholder="Ej: 10% OFF Martes..." className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-xs font-bold outline-none focus:border-indigo-500 transition-all" />
                   </div>
                 </div>
               </div>
 
-              {/* CONTROLES DE AUTOMATIZACIÓN */}
               <div className="grid md:grid-cols-2 gap-4 mt-10 pt-10 border-t border-white/5">
-                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 group hover:border-emerald-500/30 transition-all">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest italic mb-1">Responder 4 y 5 Estrellas ⭐</p>
-                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">Crecimiento Automático</p>
-                  </div>
-                  <button onClick={() => setAutoReplyHigh(!autoReplyHigh)} className={`w-12 h-6 rounded-full relative transition-all shadow-lg ${autoReplyHigh ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-slate-700'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReplyHigh ? 'right-1' : 'left-1'}`} />
+                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5">
+                  <span className="text-[10px] font-black uppercase italic">{t.autoHigh}</span>
+                  <button onClick={() => setAutoReply5Stars(!autoReply5Stars)} className={`w-12 h-6 rounded-full relative transition-all ${autoReply5Stars ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-slate-700'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReply5Stars ? 'right-1' : 'left-1'}`} />
                   </button>
                 </div>
-                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 group hover:border-indigo-500/30 transition-all">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest italic mb-1">Responder Menores a 4 ⭐ ⚠️</p>
-                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">Gestión de Crisis IA</p>
-                  </div>
-                  <button onClick={() => setAutoReplyLow(!autoReplyLow)} className={`w-12 h-6 rounded-full relative transition-all shadow-lg ${autoReplyLow ? 'bg-indigo-500 shadow-indigo-500/20' : 'bg-slate-700'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReplyLow ? 'right-1' : 'left-1'}`} />
+                <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5">
+                  <span className="text-[10px] font-black uppercase italic">{t.notifyNeg}</span>
+                  <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-12 h-6 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-500 shadow-lg shadow-indigo-500/20' : 'bg-slate-700'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notifyNegative ? 'right-1' : 'left-1'}`} />
                   </button>
                 </div>
               </div>
 
-              <button onClick={saveSettings} disabled={isSaving} className="w-full mt-10 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-6 rounded-3xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/20 active:scale-95 text-sm uppercase italic tracking-tighter">
-                {isSaving ? <Loader2 className="animate-spin" /> : <><ShieldCheck size={20}/> DESPLEGAR ESTRATEGIA EN PRODUCCIÓN</>}
+              <button onClick={saveSettings} disabled={isSaving} className="w-full mt-10 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-6 rounded-3xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/20 active:scale-95 text-sm uppercase italic">
+                {isSaving ? <Loader2 className="animate-spin" /> : <><ShieldCheck size={20}/> {t.saveBtn}</>}
               </button>
             </div>
           </div>
