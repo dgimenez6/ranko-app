@@ -62,7 +62,7 @@ export default function LandingPage() {
     if (businesses.length > 0) {
       // Cálculo de métricas agregadas desde reviews_log
       const { data: logs } = await supabase
-        .from('reviews_log')
+        .from('reviews_logs')
         .select('stars')
         .in('business_id', businesses.map(b => b.id));
 
