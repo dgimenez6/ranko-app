@@ -110,6 +110,24 @@ const saveSettings = async () => {
     }
   };
 
+  const downloadQR = (biz: any) => {
+    // Extraemos solo el ID numérico final de la ubicación de Google
+    const locationId = biz.google_location_id?.split('/').pop();
+    
+    if (!locationId) {
+      alert("Error: No Google Location ID found for this business.");
+      return;
+    }
+
+    // Link oficial de Google para escribir una reseña directamente
+    const reviewUrl = `https://search.google.com/local/writereview?placeid=${locationId}`;
+    
+    // Usamos la API de QR Server para generar la imagen y abrirla en una pestaña nueva
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(reviewUrl)}`;
+    
+    window.open(qrImageUrl, '_blank');
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
       
@@ -240,13 +258,18 @@ const saveSettings = async () => {
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-4 duration-500">
                   {myBusinesses.map(biz => (
                     <div key={biz.id} className="p-10 bg-white/5 border border-white/10 rounded-[3rem] text-center group hover:border-emerald-500/50 transition-all shadow-2xl">
-                      <div className="bg-white p-6 rounded-3xl w-fit mx-auto mb-6 shadow-xl shadow-white/5 group-hover:scale-105 transition-transform">
+                      <div className="bg-white p-6 rounded-3xl w-fit mx-auto mb-6 shadow-xl shadow-white/5 group-hover:scale-110 transition-transform cursor-pointer" onClick={() => downloadQR(biz)}>
+                        {/* Mostramos un QR visual. Al hacer click, genera el real */}
                         <QrCode size={120} className="text-slate-950" />
                       </div>
                       <h3 className="text-2xl font-black mb-2 italic uppercase tracking-tighter">{biz.business_name}</h3>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-8">Increase your 5⭐ reviews</p>
-                      <button className="w-full py-5 bg-emerald-500 text-slate-950 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-3 hover:bg-emerald-400 transition-all italic shadow-lg shadow-emerald-500/20">
-                         GENERAR QR SMART <Zap size={16}/>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-8 font-bold">Boost your Google Ranking</p>
+                      
+                      <button 
+                        onClick={() => downloadQR(biz)}
+                        className="w-full py-5 bg-emerald-500 text-slate-950 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-3 hover:bg-emerald-400 transition-all italic shadow-lg shadow-emerald-500/20 active:scale-95"
+                      >
+                        GENERAR QR SMART <Zap size={16}/>
                       </button>
                     </div>
                   ))}
