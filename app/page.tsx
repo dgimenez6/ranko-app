@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { 
   ShieldCheck, MessageSquare, Zap, Star, Loader2, 
-  Settings, Clock, Sparkles, QrCode, ArrowRight,
-  LayoutDashboard, Megaphone, Heart, HelpCircle, BrainCircuit, Globe, Phone, Mail, FileText
+  Settings, Clock, ArrowRight,
+  LayoutDashboard, Heart, HelpCircle, Globe, Phone, Mail, FileText, QrCode
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase/client';
@@ -18,7 +18,6 @@ export default function LandingPage() {
 
   // ESTADOS CONFIGURACIÓN
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
-  const [aiTone, setAiTone] = useState('professional');
   const [replyLang, setReplyLang] = useState('es');
   const [bizInfo, setBizInfo] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState(''); 
@@ -26,40 +25,23 @@ export default function LandingPage() {
   const [notifyNegative, setNotifyNegative] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const translations: any = {
-    es: {
-      heroTitle: "Tu Reputación en Piloto Automático",
-      heroSub: "IA que responde tus reseñas de Google Maps con el ADN de tu negocio.",
-      start: "Comenzar ahora",
-      setup: "CONFIGURACIÓN DEL LOCAL",
-      myBiz: "MIS NEGOCIOS",
-      stats: ["Respuestas", "Rating", "Felicidad", "Ahorro"],
-      cerebro: "Cerebro del Local (Knowledge)",
-      auto5: "Auto-Responder 5⭐",
-      notifyNeg: "Alertar Negativas WhatsApp",
-      saveBtn: "GUARDAR CONFIGURACIÓN",
-      whatsappLabel: "NÚMERO DE WHATSAPP (Alertas)",
-      placeholderInfo: "Ej: Especialidad en carnes, aceptamos Pix...",
-      footerDesc: "Elevando la hospitalidad con Inteligencia Artificial."
-    },
-    pt: {
-      heroTitle: "Sua Reputação no Piloto Automático",
-      heroSub: "IA que responde suas avaliações do Google Maps com o ADN do seu negócio.",
-      start: "Começar agora",
-      setup: "CONFIGURAÇÃO DO LOCAL",
-      myBiz: "MEUS NEGÓCIOS",
-      stats: ["Respostas", "Avaliação", "Felicidade", "Tempo"],
-      cerebro: "Cérebro do Local (Knowledge)",
-      auto5: "Auto-Responder 5⭐",
-      notifyNeg: "Alertar Negativas WhatsApp",
-      saveBtn: "ATUALIZAR ESTRATÉGIA",
-      whatsappLabel: "NÚMERO DE WHATSAPP (Alertas)",
-      placeholderInfo: "Ex: Especialidade em carnes, aceitamos Pix...",
-      footerDesc: "Elevando a hospitalidade com Inteligência Artificial."
-    }
+  // TEXTOS UI (INGLÉS PARA EL LOOK PRO)
+  const t = {
+    heroTitle: "Your Reputation on Autopilot",
+    heroSub: "AI that responds to your Google Maps reviews with your business's DNA.",
+    start: "Get Started",
+    setup: "BUSINESS SETTINGS",
+    myBiz: "MY LOCATIONS",
+    stats: ["Replies", "Rating", "Happiness", "Time Saved"],
+    cerebro: "Business Knowledge (AI Brain)",
+    auto5: "Auto-Responder 5⭐",
+    notifyNeg: "WhatsApp Alerts",
+    saveBtn: "SAVE SETTINGS",
+    whatsappLabel: "WHATSAPP NUMBER (International Format)",
+    qrTitle: "SMART QR GENERATOR",
+    qrDesc: "Boost your 5-star reviews instantly.",
+    footerDesc: "Elevating hospitality with Artificial Intelligence."
   };
-
-  const t = translations[replyLang] || translations.es;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -97,7 +79,6 @@ export default function LandingPage() {
 
   const updateLocalStates = (biz: any) => {
     setSelectedBusiness(biz);
-    setAiTone(biz.reply_tone || 'professional');
     setReplyLang(biz.language || 'es');
     setBizInfo(biz.business_info || '');
     setWhatsappNumber(biz.whatsapp_configs?.phone_number || '');
@@ -110,7 +91,6 @@ export default function LandingPage() {
     setIsSaving(true);
     try {
       await supabase.from('businesses').update({
-        reply_tone: aiTone,
         language: replyLang,
         business_info: bizInfo,
         is_active: autoReply5,
@@ -122,24 +102,22 @@ export default function LandingPage() {
         phone_number: whatsappNumber
       }, { onConflict: 'business_id' });
 
-      alert('Configuración guardada correctamente');
-    } catch (e) { alert('Error al guardar'); } finally { setIsSaving(false); }
+      alert('Settings updated successfully');
+    } catch (e) { alert('Error saving settings'); } finally { setIsSaving(false); }
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
+    <main className="min-h-screen bg-slate-950 text-white font-sans">
       
-      {/* 1. NAV (Ajustado) */}
+      {/* NAV */}
       <nav className="border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 w-full">
-        <div className="max-w-6xl mx-auto px-5 py-5 flex justify-between items-center overflow-hidden gap-4">
-          <div className="flex-shrink-0">
-            <div className="text-lg md:text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent italic tracking-tighter uppercase whitespace-nowrap pr-2">
-              RANKO AI
-            </div>
+        <div className="max-w-6xl mx-auto px-5 py-5 flex justify-between items-center gap-4">
+          <div className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent italic tracking-tighter uppercase pr-2">
+            RANKO AI
           </div>
           <button 
             onClick={() => user ? supabase.auth.signOut().then(() => window.location.reload()) : loginWithGoogle()} 
-            className={`px-4 py-2 rounded-xl font-black text-[10px] md:text-xs uppercase border transition-all ${user ? 'bg-red-500/10 text-red-400 border-red-500/10' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/10'}`}
+            className={`px-4 py-2 rounded-xl font-black text-xs uppercase border transition-all ${user ? 'bg-red-500/10 text-red-400 border-red-500/10' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/10'}`}
           >
             {user ? 'SIGN OUT' : 'LOGIN'}
           </button>
@@ -147,20 +125,20 @@ export default function LandingPage() {
       </nav>
 
       {!user ? (
-        <div className="relative pt-20 pb-32 text-center px-5">
+        <div className="pt-20 pb-32 text-center px-5">
             <h1 className="text-5xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9] uppercase italic">{t.heroTitle}</h1>
             <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-12 font-medium">{t.heroSub}</p>
-            <button onClick={loginWithGoogle} className="group relative px-8 py-5 bg-indigo-500 rounded-2xl font-black text-slate-950 flex items-center gap-3 mx-auto hover:bg-indigo-400 transition-all hover:scale-105 shadow-2xl shadow-indigo-500/40 uppercase italic">
+            <button onClick={loginWithGoogle} className="group px-8 py-5 bg-indigo-500 rounded-2xl font-black text-slate-950 flex items-center gap-3 mx-auto hover:scale-105 transition-all shadow-2xl shadow-indigo-500/40 uppercase italic">
               {t.start} <ArrowRight className="group-hover:translate-x-1 transition-transform" />
             </button>
         </div>
       ) : (
-        <div className="max-w-6xl mx-auto px-5 py-10 animate-in fade-in duration-700">
+        <div className="max-w-6xl mx-auto px-5 py-10">
           {loading ? (
-            <div className="flex flex-col items-center py-20 gap-4"><Loader2 className="animate-spin text-indigo-500" size={40} /></div>
+            <div className="flex justify-center py-20"><Loader2 className="animate-spin text-indigo-500" size={40} /></div>
           ) : (
             <div className="space-y-10">
-              {/* MÉTRICAS */}
+              {/* METRICS */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                   { label: t.stats[0], val: stats.totalReplies, icon: MessageSquare, col: 'text-indigo-400' },
@@ -177,43 +155,40 @@ export default function LandingPage() {
               </div>
 
               <div className="grid lg:grid-cols-12 gap-10">
-                {/* SIDEBAR */}
                 <div className="lg:col-span-4 space-y-6">
+                  {/* MARKET SELECTOR */}
                   <div className="bg-white/5 p-6 rounded-[2.5rem] border border-white/5">
-                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><Globe size={14} /> MERCADO</h3>
+                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6 flex items-center gap-2"><Globe size={14} /> MARKET</h3>
                     <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => setReplyLang('es')} className={`py-3 rounded-2xl font-bold text-xs border transition-all ${replyLang === 'es' ? 'bg-indigo-500 border-indigo-500 text-slate-950' : 'bg-transparent border-white/10 text-slate-400'}`}>ARGENTINA</button>
-                      <button onClick={() => setReplyLang('pt')} className={`py-3 rounded-2xl font-bold text-xs border transition-all ${replyLang === 'pt' ? 'bg-indigo-500 border-indigo-500 text-slate-950' : 'bg-transparent border-white/10 text-slate-400'}`}>BRASIL</button>
+                      <button onClick={() => setReplyLang('es')} className={`py-3 rounded-2xl font-bold text-xs border transition-all ${replyLang === 'es' ? 'bg-indigo-500 border-indigo-500 text-slate-950' : 'bg-transparent border-white/10 text-slate-400'}`}>ESPAÑOL</button>
+                      <button onClick={() => setReplyLang('pt')} className={`py-3 rounded-2xl font-bold text-xs border transition-all ${replyLang === 'pt' ? 'bg-indigo-500 border-indigo-500 text-slate-950' : 'bg-transparent border-white/10 text-slate-400'}`}>PORTUGUÊS</button>
                     </div>
                   </div>
 
-                  <div className="bg-white/5 p-6 rounded-[2.5rem] border border-white/5">
-                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><LayoutDashboard size={14} /> {t.myBiz}</h3>
-                    <div className="space-y-3">
-                      {myBusinesses.map(b => (
-                        <button key={b.id} onClick={() => updateLocalStates(b)} className={`w-full p-4 rounded-3xl text-left border transition-all ${selectedBusiness?.id === b.id ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-transparent border-white/5'}`}>
-                          <p className="font-black text-xs uppercase italic">{b.business_name}</p>
-                        </button>
-                      ))}
-                    </div>
+                  {/* SMART QR */}
+                  <div className="bg-gradient-to-br from-indigo-600 to-indigo-900 p-8 rounded-[2.5rem] text-center shadow-xl shadow-indigo-500/20">
+                    <QrCode size={48} className="mx-auto mb-4 text-white" />
+                    <h3 className="text-lg font-black uppercase italic tracking-tighter mb-2">{t.qrTitle}</h3>
+                    <p className="text-xs text-indigo-100 mb-6 font-medium">{t.qrDesc}</p>
+                    <button className="w-full py-4 bg-white text-indigo-600 rounded-2xl font-black text-[10px] uppercase tracking-tighter hover:bg-slate-100 transition-all">GENERATE QR CODE</button>
                   </div>
                 </div>
 
-                {/* CONFIGURACIÓN */}
+                {/* SETTINGS */}
                 <div className="lg:col-span-8">
                   <div className="bg-white/5 p-8 rounded-[3rem] border border-white/5 space-y-8">
                     <h2 className="text-2xl font-black italic uppercase tracking-tighter flex items-center gap-3"><Settings className="text-indigo-400" /> {t.setup}</h2>
                     
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 block">{t.cerebro}</label>
-                      <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.placeholderInfo} className="w-full bg-slate-950 border border-white/10 rounded-3xl p-5 text-sm focus:border-indigo-500 outline-none transition-all min-h-[120px]" />
+                      <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder="Business details for AI training..." className="w-full bg-slate-950 border border-white/10 rounded-3xl p-5 text-sm focus:border-indigo-500 outline-none transition-all min-h-[120px]" />
                     </div>
 
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 block">{t.whatsappLabel}</label>
                       <div className="flex items-center gap-3 bg-slate-950 border border-white/10 rounded-3xl p-4">
                         <Phone size={18} className="text-indigo-400" />
-                        <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="54911..." className="bg-transparent w-full outline-none text-sm" />
+                        <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="e.g. 54911..." className="bg-transparent w-full outline-none text-sm" />
                       </div>
                     </div>
 
@@ -243,7 +218,7 @@ export default function LandingPage() {
         </div>
       )}
 
-      {/* FOOTER LEGAL */}
+      {/* FOOTER */}
       <footer className="py-20 border-t border-white/5 bg-slate-950">
         <div className="max-w-6xl mx-auto px-5">
           <div className="grid md:grid-cols-3 gap-10 mb-12">
@@ -252,18 +227,17 @@ export default function LandingPage() {
               <p className="text-xs text-slate-500 leading-relaxed">{t.footerDesc}</p>
             </div>
             <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-300">Soporte</h4>
-              <a href="mailto:damian@rankoai.com" className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors"><Mail size={14}/> damian@rankoai.com</a>
-              <a href="#" className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors"><HelpCircle size={14}/> Centro de Ayuda</a>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-300">Support</h4>
+              <a href="mailto:support@rankoai.com" className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors"><Mail size={14}/> support@rankoai.com</a>
             </div>
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-300">Legal</h4>
-              <a href="#" className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors"><FileText size={14}/> Términos de Servicio</a>
-              <a href="#" className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors"><ShieldCheck size={14}/> Privacidad de Datos</a>
+              <a href="#" className="text-xs text-slate-500 hover:text-indigo-400 transition-colors block">Terms of Service</a>
+              <a href="#" className="text-xs text-slate-500 hover:text-indigo-400 transition-colors block">Privacy Policy</a>
             </div>
           </div>
           <div className="pt-8 border-t border-white/5 text-center text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">
-            © 2026 Búzios & Argentina
+            © 2026 RANKO AI - GLOBAL HOSPITALITY TECH
           </div>
         </div>
       </footer>
