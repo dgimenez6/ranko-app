@@ -10,45 +10,41 @@ export default function InterceptorPage() {
   const [biz, setBiz] = useState<any>(null);
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
 
   useEffect(() => {
-    // 1. Extraemos el ID de la URL manualmente
-    const pathSegments = window.location.pathname.split('/');
-    const extractedId = pathSegments[pathSegments.length - 1];
+    // 1. Extraemos el ID del path de la URL
+    const segments = window.location.pathname.split('/');
+    const rawId = segments[segments.length - 1];
 
-    // 2. VALIDACIÓN CRÍTICA: Solo procedemos si el ID parece un UUID (36 caracteres)
-    if (!extractedId || extractedId.length < 30 || extractedId === 'undefined') {
-      console.log("ID no detectado todavía...");
-      return;
+    // 2. REGEX DE SEGURIDAD: Solo permite UUIDs reales. 
+    // Bloquea "undefined", "review", o strings cortos.
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    if (!rawId || !uuidRegex.test(rawId)) {
+      console.log("Esperando un UUID válido... Detectado:", rawId);
+      return; 
     }
 
-    const loadBusinessData = async () => {
+    const loadData = async () => {
       try {
         setLoading(true);
-        const { data, error: dbError } = await supabase
+        // Aquí solo entra si rawId es un UUID perfecto
+        const { data, error } = await supabase
           .from('businesses')
           .select('*')
-          .eq('id', extractedId)
+          .eq('id', rawId)
           .maybeSingle();
 
-        if (dbError) throw dbError;
-        
-        if (data) {
-          setBiz(data);
-          setError(false);
-        } else {
-          setError(true);
-        }
+        if (error) throw error;
+        if (data) setBiz(data);
       } catch (err) {
-        console.error("Error cargando negocio:", err);
-        setError(true);
+        console.error("Error en Supabase:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    loadBusinessData();
+    loadData();
   }, []);
 
   const handleRating = (value: number) => {
@@ -57,47 +53,31 @@ export default function InterceptorPage() {
       const locationId = biz?.google_location_id?.split('/').pop();
       if (locationId) {
         window.location.href = `https://search.google.com/local/writereview?placeid=${locationId}`;
-      } else {
-        alert("Google Location ID no configurado.");
       }
     } else {
       setStep(2);
     }
   };
 
-  const submitNegativeFeedback = async () => {
+  const submitNegative = async () => {
     if (!feedback.trim() || !biz?.id) return;
-
     try {
-      const { error: insertError } = await supabase.from('interceptions').insert({
+      await supabase.from('interceptions').insert({
         business_id: biz.id,
-        rating: rating,
+        rating,
         comment: feedback
       });
-
-      if (insertError) throw insertError;
       setStep(3);
-    } catch (err) {
-      alert("Error al enviar el comentario.");
+    } catch (e) {
+      alert("Error enviando feedback");
     }
   };
-
-  // 3. ESTADOS DE CARGA Y ERROR PARA EL DUEÑO
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="text-red-500 mb-4">⚠️</div>
-        <h2 className="text-xl font-black uppercase italic">Enlace Inválido</h2>
-        <p className="text-slate-500 text-xs mt-2 uppercase tracking-widest">Asegurate de que el ID en la URL sea el correcto.</p>
-      </div>
-    );
-  }
 
   if (loading || !biz) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-indigo-500" size={40} />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 italic">RANKO SECURE LOAD...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 italic">RANKO SECURE CHECK...</p>
       </div>
     );
   }
@@ -110,16 +90,14 @@ export default function InterceptorPage() {
       </div>
 
       {step === 1 && (
-        <div className="animate-in fade-in duration-500 max-w-sm w-full">
-          <p className="text-lg mb-10 font-medium text-slate-300 italic italic">¿Cómo fue tu experiencia hoy?</p>
+        <div className="max-w-sm w-full animate-in fade-in">
+          <p className="text-lg mb-10 font-medium text-slate-300 italic">¿Cómo calificarías tu experiencia hoy?</p>
           <div className="flex justify-center gap-3">
             {[1, 2, 3, 4, 5].map((s) => (
               <button 
                 key={s} 
                 onClick={() => handleRating(s)} 
-                className={`p-5 rounded-[1.5rem] transition-all border ${
-                  rating >= s ? 'bg-indigo-500 border-indigo-400' : 'bg-white/5 border-white/10'
-                }`}
+                className={`p-5 rounded-[1.5rem] border ${rating >= s ? 'bg-indigo-500 border-indigo-400' : 'bg-white/5 border-white/10'}`}
               >
                 <Star size={28} className={rating >= s ? 'fill-white text-white' : 'text-slate-500'} />
               </button>
@@ -131,17 +109,16 @@ export default function InterceptorPage() {
       {step === 2 && (
         <div className="w-full max-w-md animate-in slide-in-from-bottom-6">
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem]">
-            <h2 className="text-xl font-black mb-6 uppercase italic text-white">Queremos escucharte</h2>
+            <h2 className="text-xl font-black mb-6 uppercase italic tracking-tighter">Queremos escucharte</h2>
             <textarea 
               value={feedback} 
               onChange={(e) => setFeedback(e.target.value)}
               className="w-full bg-slate-950 border border-white/10 rounded-3xl p-6 text-sm mb-6 outline-none focus:border-indigo-500 h-40 text-white resize-none"
-              placeholder="Contanos qué podemos mejorar..."
+              placeholder="Contanos qué falló..."
             />
             <button 
-              onClick={submitNegativeFeedback} 
-              disabled={!feedback.trim()}
-              className="w-full bg-indigo-500 text-slate-950 py-6 rounded-2xl font-black italic uppercase transition-all hover:bg-indigo-400 disabled:opacity-50"
+              onClick={submitNegative} 
+              className="w-full bg-indigo-500 text-slate-950 py-6 rounded-2xl font-black italic uppercase"
             >
               ENVIAR COMENTARIO PRIVADO
             </button>
@@ -150,21 +127,15 @@ export default function InterceptorPage() {
       )}
 
       {step === 3 && (
-        <div className="animate-in zoom-in duration-700 max-w-sm w-full">
-          <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-8 shadow-2xl">
-            <Zap size={40} className="fill-emerald-400" />
-          </div>
-          <h2 className="text-2xl font-black mb-4 italic uppercase text-white">¡Gracias por avisarnos!</h2>
+        <div className="animate-in zoom-in max-w-sm w-full">
+          <Zap size={48} className="mx-auto mb-8 text-emerald-400 fill-emerald-400" />
+          <h2 className="text-2xl font-black mb-4 italic uppercase">¡Gracias!</h2>
           <div className="p-10 bg-slate-900 border border-white/10 rounded-[2.5rem] font-black italic">
-            <p className="text-[10px] uppercase text-indigo-400 tracking-widest mb-3">Como atención especial:</p>
-            <p className="text-2xl text-white uppercase">{biz.auto_coupon || 'Cortesía de la Casa'}</p>
+            <p className="text-[10px] uppercase text-indigo-400 mb-2">Compensación:</p>
+            <p className="text-2xl text-white uppercase tracking-tighter">{biz.auto_coupon || 'Cortesía de la Casa'}</p>
           </div>
         </div>
       )}
-
-      <div className="fixed bottom-10 left-0 w-full text-center">
-        <p className="text-[8px] font-black text-slate-800 uppercase tracking-widest">Powered by Ranko AI Reputation Defense</p>
-      </div>
     </div>
   );
 }
