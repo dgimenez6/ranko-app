@@ -14,6 +14,9 @@ export const useAuth = () => {
     });
     if (error) console.error('Error:', error.message);
   };
-
-  return { loginWithGoogle };
+  const logout = async () => {
+      await supabase.auth.signOut();
+      window.location.reload();
+    };
+  return { loginWithGoogle, logout };
 };

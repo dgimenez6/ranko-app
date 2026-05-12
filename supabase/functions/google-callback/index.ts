@@ -18,9 +18,10 @@ serve(async (req) => {
   const code = url.searchParams.get("code");
   const userId = url.searchParams.get("state"); 
 
-  if (!code || !userId) return new Response("Missing parameters", { status: 400 });
+  if (!code || !userId) return new Response("Parámetros faltantes", { status: 400 });
 
   try {
+    // 1. Intercambio de Código por Tokens
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -34,57 +35,69 @@ serve(async (req) => {
     });
 
     const tokens = await tokenResponse.json();
-    if (tokens.error) throw new Error(`Token Error: ${tokens.error_description}`);
+    if (tokens.error) throw new Error(`Google Auth Error: ${tokens.error_description}`);
 
+    // 2. Obtener Cuenta de Business Profile
     const accountsRes = await fetch("https://mybusinessbusinessinformation.googleapis.com/v1/accounts", {
       headers: { Authorization: `Bearer ${tokens.access_token}` }
     });
     const accountsData = await accountsRes.json();
     
     if (!accountsData.accounts || accountsData.accounts.length === 0) {
-      throw new Error("No se encontró una cuenta de Google Business Profile.");
+      throw new Error("No se encontró una cuenta de Google Business configurada.");
     }
 
     const accountName = accountsData.accounts[0].name;
 
-    const locRes = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,languageCode&pageSize=100`, {
+    // 3. Obtener Locales vinculados
+    const locRes = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,languageCode,storefrontAddress&pageSize=100`, {
       headers: { Authorization: `Bearer ${tokens.access_token}` }
     });
-    
     const locData = await locRes.json();
 
     if (!locData.locations || locData.locations.length === 0) {
-      throw new Error("No se encontraron locales físicos vinculados.");
+      throw new Error("No se encontraron locales físicos activos.");
     }
 
+    // 4. Procesamiento y Persistencia (Upsert Inteligente)
     for (const loc of locData.locations) {
-      const isPT = loc.languageCode === 'pt' || loc.title.toLowerCase().includes('buzios');
+      // Lógica de región mejorada
+      const isBrazil = loc.languageCode?.startsWith('pt') || loc.storefrontAddress?.regionCode === 'BR';
       
-      // AJUSTE: Seteamos valores por defecto inteligentes para que el Dashboard no arranque vacío
-      await supabase
+      const updateData: any = {
+        user_id: userId,
+        google_location_id: loc.name, // El 'name' de Google es el ID único (locations/XXXX)
+        business_name: loc.title,
+        google_access_token: tokens.access_token,
+        connection_status: 'connected',
+        language: isBrazil ? 'pt' : 'es',
+        country_code: isBrazil ? 'BR' : 'AR',
+        last_sync_at: new Date().toISOString(),
+        // Seteamos defaults solo si es registro nuevo
+        reply_tone: 'friendly',
+        auto_reply_5_stars: true,
+        notify_negative_reviews: true,
+        interceptor_mode: true
+      };
+
+      // CRÍTICO: Solo actualizamos el refresh_token si Google nos mandó uno nuevo
+      // Si no, dejamos el que ya teníamos guardado para no perder la conexión
+      if (tokens.refresh_token) {
+        updateData.google_refresh_token = tokens.refresh_token;
+      }
+
+      const { error: upsertError } = await supabase
         .from("businesses")
-        .upsert({
-          user_id: userId,
-          google_location_id: loc.name,
-          business_name: loc.title,
-          google_access_token: tokens.access_token,
-          ...(tokens.refresh_token && { google_refresh_token: tokens.refresh_token }),
-          connection_status: 'connected',
-          language: isPT ? 'pt' : 'es',
-          country_code: isPT ? 'BR' : 'AR',
-          // NUEVO: Seteamos defaults para que los switches y la IA tengan donde agarrarse
-          reply_tone: 'professional',
-          auto_reply_5_stars: true,
-          notify_negative_reviews: true,
-          last_sync_at: new Date().toISOString()
-        }, { onConflict: 'google_location_id' });
+        .upsert(updateData, { onConflict: 'google_location_id' });
+
+      if (upsertError) console.error(`Error haciendo upsert de ${loc.title}:`, upsertError);
     }
 
-    // Redirección a producción
-    return Response.redirect("https://rankoai.com/dashboard", 302);
+    // Redirección segura al Dashboard
+    return Response.redirect("https://rankoai.com/dashboard?status=success", 302);
 
   } catch (err) {
-    console.error("Error en Callback:", err.message);
-    return new Response(`Error: ${err.message}`, { status: 500, headers: corsHeaders });
+    console.error("Error crítico en Callback:", err.message);
+    return Response.redirect(`https://rankoai.com/dashboard?status=error&message=${encodeURIComponent(err.message)}`, 302);
   }
 });

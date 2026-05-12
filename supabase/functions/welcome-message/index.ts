@@ -17,30 +17,35 @@ serve(async (req) => {
   try {
     const { business_id } = await req.json();
 
-    // 1. Obtener datos con Join de configuración de WhatsApp
+    // 1. Obtener datos con Join (Manejo correcto de arrays de Supabase)
     const { data: biz, error: bizError } = await supabase
       .from('businesses')
       .select('*, whatsapp_configs(phone_number)')
       .eq('id', business_id)
-      .single();
+      .maybeSingle();
 
-    if (bizError || !biz || !biz.whatsapp_configs) {
-      throw new Error("No se encontró la configuración de WhatsApp para este negocio.");
+    if (bizError || !biz) throw new Error("No se encontró el negocio.");
+
+    // Extraemos el teléfono manejando el array de la relación
+    const configs = biz.whatsapp_configs;
+    const phone = Array.isArray(configs) ? configs[0]?.phone_number : configs?.phone_number;
+
+    if (!phone) {
+      throw new Error("El negocio no tiene un teléfono vinculado en whatsapp_configs.");
     }
 
-    const phone = biz.whatsapp_configs.phone_number;
-    const isPT = biz.language === 'pt'; 
-    
-    // Usamos el Secret para la API Key, con el fallback que tenías solo por seguridad
-    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY') || '2EBE5DA7F3DB-43F1-998A-0616AE7E510F';
-    const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test';
+    const isPT = biz.language === 'pt' || biz.country_code === 'BR'; 
+    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
+    const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-main';
 
-    // 2. Mensajes bilingües optimizados (Voseo para Argentina / Portugués para Búzios)
+    if (!evoApiKey) throw new Error("Falta la configuración de EVOLUTION_API_KEY en el servidor.");
+
+    // 2. Mensajes bilingües con Personalidad Ranko
     const message = isPT
-      ? `Olá! Sou o *Ranko*, seu novo assistente de hospitalidade para *${biz.business_name}*. 🚀\n\nJá estou conectado ao seu Google Business. A partir de agora:\n✅ Responderei automaticamente as avaliações positivas (4 e 5⭐).\n🔔 Se chegar uma crítica, avisarei você por aqui com uma sugestão.\n\nDigite *AJUDA* a qualquer momento para ver meus comandos. Bem-vindo!`
-      : `¡Hola! Soy *Ranko*, tu nuevo asistente de hospitalidad para *${biz.business_name}*. 🚀\n\nYa estoy conectado a tu Google Business. A partir de ahora:\n✅ Voy a responder solo todas las reseñas positivas (4 y 5⭐).\n🔔 Si llega una crítica, te aviso por acá con una sugerencia para que decidamos juntos.\n\nEscribí *AYUDA* en cualquier momento para ver qué puedo hacer. ¡Bienvenido a bordo!`;
+      ? `Olá! Sou o *Ranko*, seu novo assistente de hospitalidade para *${biz.business_name}*. 🚀\n\nJá estou conectado ao seu Google Business. A partir de agora:\n✅ Responderei automaticamente as avaliações positivas (4 e 5⭐).\n🚨 Se chegar uma crítica, avisarei você por aqui com uma sugestão.\n\nDigite */status* a qualquer momento para ver o plano. Bem-vindo!`
+      : `¡Hola! Soy *Ranko*, tu nuevo asistente de hospitalidad para *${biz.business_name}*. 🚀\n\nYa estoy conectado a tu Google Business. A partir de ahora:\n✅ Voy a responder solo todas las reseñas positivas (4 y 5⭐).\n🚨 Si llega una crítica, te aviso por acá con una sugerencia para que decidamos juntos.\n\nEscribí */status* en cualquier momento para ver tu configuración. ¡Bienvenido a bordo!`;
 
-    // 3. Envío profesional vía Evolution API usando la instancia de los Secrets
+    // 3. Envío profesional vía Evolution API
     const evoResponse = await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
       method: 'POST',
       headers: { 
@@ -53,9 +58,19 @@ serve(async (req) => {
       })
     });
 
-    if (!evoResponse.ok) throw new Error("Error al contactar con la API de WhatsApp");
+    if (!evoResponse.ok) {
+      const errorText = await evoResponse.text();
+      throw new Error(`Error Evolution API: ${errorText}`);
+    }
 
-    return new Response(JSON.stringify({ success: true, message: "Bienvenida enviada correctamente" }), {
+    // 4. Marcamos éxito en los logs para métricas
+    await supabase.from('reviews_logs').insert({
+      business_id: biz.id,
+      status: 'welcome_sent',
+      reply_text: 'Mensaje de bienvenida enviado correctamente'
+    });
+
+    return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200
     });

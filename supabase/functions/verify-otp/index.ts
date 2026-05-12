@@ -17,8 +17,10 @@ serve(async (req) => {
   try {
     const { phone, code, business_id } = await req.json();
     
-    // 1. Limpieza consistente (mismo formato que send-otp)
-    const cleanPhone = phone.replace(/\+/g, '').replace(/\s/g, '');
+    if (!phone || !code || !business_id) throw new Error("Datos incompletos.");
+
+    // 1. Limpieza RIGUROSA (Igual que en send-otp)
+    const cleanPhone = phone.replace(/\D/g, '');
 
     // 2. Validar el código contra la base de datos
     const { data: session, error: sessionError } = await supabase
@@ -30,33 +32,54 @@ serve(async (req) => {
       .single();
 
     if (sessionError || !session) {
-      return new Response(JSON.stringify({ error: "Código inválido o expirado" }), {
+      return new Response(JSON.stringify({ 
+        error: "El código es incorrecto o ya expiró." 
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400
       });
     }
 
-    // 3. Actualizar sesión y vincular WhatsApp (Atómico)
-    const { error: errorSession } = await supabase
-      .from('user_sessions')
-      .update({ is_verified: true, active_business_id: business_id })
-      .eq('phone', cleanPhone);
+    // 3. Ejecución Atómica de Alta
+    // Usamos Promise.all para que sea rápido
+    const results = await Promise.all([
+      // A. Quemamos el código y marcamos sesión verificada
+      supabase
+        .from('user_sessions')
+        .update({ 
+          is_verified: true, 
+          active_business_id: business_id,
+          otp_code: null // Seguridad: No se puede volver a usar
+        })
+        .eq('phone', cleanPhone),
 
-    if (errorSession) throw new Error(`Error en sesión: ${errorSession.message}`);
+      // B. Guardamos configuración de WhatsApp
+      supabase
+        .from('whatsapp_configs')
+        .upsert({
+          business_id: business_id,
+          phone_number: cleanPhone,
+          instance_key: Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-main',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'business_id' }),
 
-    // Guardar configuración vinculando el ID de instancia desde los Secrets
-    const { error: errorConfig } = await supabase
-      .from('whatsapp_configs')
-      .upsert({
-        business_id: business_id,
-        phone_number: cleanPhone,
-        instance_key: Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-test',
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'business_id' });
+      // C. Marcamos el negocio como activo y configurado
+      supabase
+        .from('businesses')
+        .update({ 
+          is_active: true,
+          connection_status: 'connected',
+          whatsapp_number: cleanPhone // Guardamos respaldo para alertas
+        })
+        .eq('id', business_id)
+    ]);
 
-    if (errorConfig) throw new Error(`Error en config: ${errorConfig.message}`);
+    // Chequeamos errores en las promesas
+    if (results.some(r => r.error)) {
+      throw new Error("Error guardando la configuración final.");
+    }
 
-    // 4. Trigger de bienvenida (Opcional: no bloquea la verificación si falla)
+    // 4. Disparar Bienvenida (Background task)
     const welcomeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/welcome-message`;
     fetch(welcomeUrl, {
       method: 'POST',
@@ -64,10 +87,13 @@ serve(async (req) => {
         'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
         'Content-Type': 'application/json' 
       },
-      body: JSON.stringify({ business_id })
-    }).catch(e => console.error("Error enviando bienvenida:", e));
+      body: JSON.stringify({ business_id, phone: cleanPhone })
+    }).catch(e => console.error("Error trigger bienvenida:", e));
 
-    return new Response(JSON.stringify({ success: true, verified: true }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: "WhatsApp vinculado correctamente." 
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200
     });
