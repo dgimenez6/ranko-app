@@ -1,89 +1,117 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { Star, MessageSquare, Send, Zap } from 'lucide-react';
-import { supabase } from '../../../lib/supabase/client';
 
-export default function InterceptorPage({ params }: { params: { id: string } }) {
+import React, { useState, useEffect } from 'react';
+import { Star, Send, Zap, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase/client'; // Ajustá esta ruta si tu archivo está en otro lado
+
+export default function InterceptorPage() {
+  const [biz, setBiz] = useState<any>(null);
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState('');
-  const [biz, setBiz] = useState<any>(null);
-  const [step, setStep] = useState(1); // 1: Rating, 2: Feedback/Redirección
 
   useEffect(() => {
-    // Buscamos la info del local para el branding y el link de Google
-    supabase.from('businesses').select('*').eq('id', params.id).single()
-   .then(({ data }: { data: any }) => setBiz(data));
-  }, [params.id]);
+    // 1. Extraemos el ID de la URL físicamente
+    const pathSegments = window.location.pathname.split('/');
+    const rawId = pathSegments[pathSegments.length - 1];
+    
+    // 2. VALIDACIÓN DE HIERRO: Si no es un UUID real, no llamamos a Supabase
+    // Esto evita que mandes "undefined" o "review" y te tire el error 400
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!rawId || !uuidRegex.test(rawId)) {
+      console.log("Esperando UUID válido... Detectado:", rawId);
+      return;
+    }
 
-  const handleRating = (value: number) => {
-    setRating(value);
-    if (value >= 4) {
-      // SI ES BUENA: Lo mandamos a Google Maps (Extraemos el ID del string de la DB)
-      const locationId = biz.google_location_id?.split('/').pop();
-      window.location.href = `https://search.google.com/local/writereview?placeid=${locationId}`;
+    const loadData = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('businesses')
+          .select('id, business_name, google_location_id, auto_coupon')
+          .eq('id', rawId)
+          .maybeSingle();
+        
+        if (error) throw error;
+        if (data) setBiz(data);
+      } catch (err) {
+        console.error("Error en query:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  const handleRating = (val: number) => {
+    setRating(val);
+    if (val >= 4) {
+      const loc = biz.google_location_id?.split('/').pop();
+      if (loc) window.location.href = `https://search.google.com/local/writereview?placeid=${loc}`;
     } else {
-      // SI ES MALA: Vamos al paso de "Amortiguador"
       setStep(2);
     }
   };
 
-  const submitNegative = async () => {
-    // Guardamos la queja internamente
-    await supabase.from('interceptions').insert({
-      business_id: params.id,
-      rating,
-      comment: feedback
-    });
-    setStep(3); // Paso final de agradecimiento + cupón
+  const submit = async () => {
+    if (!feedback.trim() || !biz?.id) return;
+    try {
+      const { error } = await supabase.from('interceptions').insert({
+        business_id: biz.id,
+        rating: rating,
+        comment: feedback
+      });
+      if (error) throw error;
+      setStep(3);
+    } catch (e) {
+      alert("Error al enviar el feedback");
+    }
   };
 
-  if (!biz) return null;
+  if (loading || !biz) return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <Loader2 className="animate-spin text-indigo-500" size={40} />
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6 flex flex-col items-center justify-center text-center">
-      <h1 className="text-2xl font-black uppercase italic mb-8 tracking-tighter">RANKO AI x {biz.business_name}</h1>
+    <div className="min-h-screen bg-slate-950 text-white p-8 flex flex-col items-center justify-center font-sans">
+      <div className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-2 italic">RANKO AI x DEFENSE</div>
+      <h1 className="text-3xl font-black mb-12 uppercase italic tracking-tighter text-center leading-none">
+        {biz.business_name}
+      </h1>
       
       {step === 1 && (
-        <div className="animate-in fade-in duration-500">
-          <p className="text-lg mb-8 font-medium">¿Cómo fue tu experiencia hoy?</p>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((s) => (
-              <button key={s} onClick={() => handleRating(s)} className="p-4 bg-white/5 rounded-2xl hover:bg-indigo-500 transition-all border border-white/10">
-                <Star size={32} className={rating >= s ? 'fill-white' : ''} />
-              </button>
-            ))}
-          </div>
+        <div className="flex gap-3 animate-in fade-in zoom-in duration-500">
+          {[1,2,3,4,5].map(s => (
+            <button key={s} onClick={() => handleRating(s)} className="p-5 bg-white/5 border border-white/10 rounded-2xl transition-all active:scale-90">
+              <Star size={28} className={rating >= s ? "fill-white text-white" : "text-slate-600"} />
+            </button>
+          ))}
         </div>
       )}
 
       {step === 2 && (
-        <div className="w-full max-w-md animate-in slide-in-from-bottom-4">
-          <p className="text-indigo-400 font-bold mb-4 uppercase text-xs tracking-widest">Lo sentimos mucho</p>
-          <h2 className="text-xl font-black mb-6">Queremos compensarte. ¿Qué falló?</h2>
+        <div className="w-full max-w-md animate-in slide-in-from-bottom-6">
           <textarea 
-            value={feedback} 
+            className="w-full bg-slate-900 border border-white/10 p-6 rounded-3xl mb-4 h-40 text-sm outline-none focus:border-indigo-400 transition-all text-white"
+            placeholder="¿Qué podemos mejorar?"
             onChange={(e) => setFeedback(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-3xl p-5 text-sm mb-6 outline-none focus:border-indigo-500 h-32"
-            placeholder="Comida fría, mala atención..."
           />
-          <button onClick={submitNegative} className="w-full bg-indigo-500 py-5 rounded-2xl font-black italic uppercase flex items-center justify-center gap-3">
-            ENVIAR AL ENCARGADO <Send size={18} />
+          <button onClick={submit} className="w-full bg-indigo-500 text-slate-950 py-5 rounded-2xl font-black uppercase italic">
+            ENVIAR COMENTARIO PRIVADO
           </button>
         </div>
       )}
 
       {step === 3 && (
-        <div className="animate-in zoom-in duration-500">
-          <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Zap size={40} className="fill-emerald-400" />
+        <div className="text-center animate-in zoom-in">
+          <Zap className="mx-auto mb-6 text-emerald-400 fill-emerald-400" size={56} />
+          <h2 className="text-2xl font-black uppercase italic">¡Gracias por avisarnos!</h2>
+          <div className="mt-8 p-10 bg-slate-900 border border-white/10 rounded-[2.5rem]">
+            <p className="text-[10px] uppercase text-indigo-400 mb-2 font-bold tracking-widest">Tu atención especial:</p>
+            <p className="text-2xl font-black uppercase tracking-tighter">{biz.auto_coupon || 'Cortesía de la Casa'}</p>
           </div>
-          <h2 className="text-2xl font-black mb-4 italic uppercase">¡Gracias por avisarnos!</h2>
-          <p className="text-slate-400 mb-8 text-sm">Tu mensaje llegó directo al dueño. Como disculpa, queremos ofrecerte esto:</p>
-          <div className="p-8 bg-indigo-500 text-slate-950 rounded-[2rem] font-black italic">
-            <p className="text-xs uppercase opacity-70">Tu Cupón VIP:</p>
-            <p className="text-3xl mt-2">{biz.auto_coupon || 'Café de Cortesía'}</p>
-          </div>
-          <p className="mt-8 text-[10px] text-slate-600 uppercase font-bold tracking-widest">Mostrá esta pantalla al pagar</p>
         </div>
       )}
     </div>
