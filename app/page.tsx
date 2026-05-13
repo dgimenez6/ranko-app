@@ -34,35 +34,35 @@ export default function LandingPage() {
   // DICCIONARIO DE IDIOMAS (Español / Português)
   const content: any = {
     es: {
+      tagline: 'Defensa Activa de Reputación para Negocios Locales',
+      loginDesc: 'Gestioná reseñas, automatizá respuestas y convertí críticas en feedback privado con el sistema líder en Hospitality Tech.',
       overview: 'RESUMEN', strategy: 'DEFENSA', growth: 'CRECIMIENTO',
       totalReplies: 'Respuestas Totales', avgRating: 'Calificación Global',
       happiness: 'Felicidad del Cliente', timeSaved: 'Tiempo Ahorrado',
       selectBiz: 'TUS NEGOCIOS', growthTools: 'CRECIMIENTO',
       smartInterceptor: 'SMART QR INTERCEPTOR', downloadQr: 'DESCARGAR QR',
       langMode: 'IDIOMA DE RESPUESTA', waNotifications: 'ALERTAS WHATSAPP',
-      brainLabel: 'CEREBRO DE IA', brainPlaceholder: 'Datos de tu negocio (menú, especialidades, etc.) para que la IA responda...',
+      brainLabel: 'CEREBRO DE IA', brainPlaceholder: 'Datos de tu negocio...',
       autoReply5: 'Auto-Respuesta 5★', handsFree: '100% Automático',
-      crisisNotif: 'Alerta de Crítica', alertOwner: 'Notificar al dueño por WhatsApp',
-      automaticCoupon: 'Cupón de Regalo', couponDetail: 'Beneficio del Cupón',
-      couponPlaceholder: 'Ej: Un café de cortesía, 10% OFF...',
-      interceptorMode: 'Modo del Interceptor',
-      aggressive: 'Defensa Agresiva (1-3★)', balanced: 'Equilibrado (1-2★)', minimal: 'Mínimo (Siempre Google)',
+      crisisNotif: 'Alerta de Crítica', alertOwner: 'Notificar al dueño',
+      automaticCoupon: 'Cupón de Regalo', couponDetail: 'Beneficio',
+      couponPlaceholder: 'Ej: 10% OFF...',
       deployBtn: 'GUARDAR CAMBIOS', saving: 'GUARDANDO...'
     },
     pt: {
+      tagline: 'Defesa Ativa de Reputação para Negócios Locais',
+      loginDesc: 'Gerencie avaliações, automatize respostas e transforme críticas em feedback privado com o sistema líder em Hospitality Tech.',
       overview: 'VISÃO GERAL', strategy: 'DEFESA', growth: 'CRESCIMENTO',
       totalReplies: 'Respostas Totais', avgRating: 'Avaliação Global',
       happiness: 'Índice de Felicidade', timeSaved: 'Tempo Economizado',
       selectBiz: 'SEUS NEGÓCIOS', growthTools: 'CRESCIMENTO',
       smartInterceptor: 'SMART QR INTERCEPTOR', downloadQr: 'BAIXAR QR',
       langMode: 'IDIOMA DE RESPOSTA', waNotifications: 'NOTIFICAÇÕES WHATSAPP',
-      brainLabel: 'CÉREBRO DA IA', brainPlaceholder: 'Dados do seu negócio (menu, especialidades, etc.) para que a IA responda...',
+      brainLabel: 'CÉREBRO DA IA', brainPlaceholder: 'Dados do seu negócio...',
       autoReply5: 'Resposta Auto 5★', handsFree: '100% Automático',
-      crisisNotif: 'Notificação de Crise', alertOwner: 'Alertar proprietário por WhatsApp',
+      crisisNotif: 'Notificação de Crise', alertOwner: 'Alertar proprietário',
       automaticCoupon: 'Cupom de Presente', couponDetail: 'Detalhe do Benefício',
-      couponPlaceholder: 'Ex: Um café cortesia, 10% OFF...',
-      interceptorMode: 'Modo do Interceptor',
-      aggressive: 'Defesa Agresiva (1-3★)', balanced: 'Equilibrado (1-2★)', minimal: 'Mínimo (Sempre Google)',
+      couponPlaceholder: 'Ex: 10% OFF...',
       deployBtn: 'SALVAR ALTERAÇÕES', saving: 'SALVANDO...'
     }
   };
@@ -90,13 +90,11 @@ export default function LandingPage() {
 
   const fetchData = async (currentUser: any) => {
     try {
-      const { data: businesses, error: bError } = await supabase
+      const { data: businesses } = await supabase
         .from('businesses')
         .select('*, whatsapp_configs(phone_number)')
         .eq('user_id', currentUser.id);
       
-      if (bError) throw bError;
-
       if (businesses && businesses.length > 0) {
         setMyBusinesses(businesses);
         const first = businesses[0];
@@ -104,9 +102,7 @@ export default function LandingPage() {
         applyBusinessData(first);
 
         const bizIds = businesses.map(b => b.id);
-        const { data: logs, error: lError } = await supabase.from('reviews_logs').select('stars, status').in('business_id', bizIds);
-
-        if (lError) throw lError;
+        const { data: logs } = await supabase.from('reviews_logs').select('stars, status').in('business_id', bizIds);
 
         if (logs) {
           const valid = logs.filter(l => l.stars != null);
@@ -119,7 +115,7 @@ export default function LandingPage() {
           });
         }
       }
-    } catch (e) { console.error("Fetch error:", e); } finally { setLoading(false); }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const applyBusinessData = (biz: any) => {
@@ -139,63 +135,84 @@ export default function LandingPage() {
     if (!selectedBusiness) return;
     setIsSaving(true);
     try {
-      const { error: bizError } = await supabase.from('businesses').update({
+      await supabase.from('businesses').update({
         language: replyLang, business_info: bizInfo, reply_tone: aiTone,
         promo_text: promoText, auto_reply_5_stars: autoReply5,
         notify_negative_reviews: notifyNegative, auto_coupon: autoCoupon,
         interceptor_mode: interceptorMode
       }).eq('id', selectedBusiness.id);
 
-      if (bizError) throw bizError;
-
       const phone = whatsappNumber.replace(/\D/g, '');
-      const { error: waError } = await supabase.from('whatsapp_configs').upsert({ 
-        business_id: selectedBusiness.id, 
-        phone_number: phone 
-      }, { onConflict: 'business_id' });
-
-      if (waError) throw waError;
+      await supabase.from('whatsapp_configs').upsert({ business_id: selectedBusiness.id, phone_number: phone }, { onConflict: 'business_id' });
       
-      alert(replyLang === 'pt' ? "Alterações salvas com sucesso!" : "¡Cambios guardados con éxito!");
+      alert(replyLang === 'pt' ? "Alterações salvas!" : "¡Cambios guardados!");
       fetchData(user);
-    } catch (e: any) { alert("Error al guardar: " + e.message); } finally { setIsSaving(false); }
+    } catch (e) { alert("Error"); } finally { setIsSaving(false); }
   };
 
-  if (loading) return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4">
-      <Loader2 className="animate-spin text-indigo-500" size={40} />
-      <span className="text-[10px] font-black tracking-[0.3em] text-slate-500 uppercase">RANKO AI LOADING</span>
-    </div>
-  );
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" /></div>;
 
+  // --- LANDING PAGE / LOGIN SECTION ---
   if (!user) return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-6">
-      <div className="max-w-md w-full bg-slate-900/50 border border-white/5 rounded-[3rem] p-12 text-center shadow-2xl backdrop-blur-xl">
-        <div className="mb-8 inline-flex items-center justify-center w-20 h-20 bg-indigo-500/10 rounded-3xl border border-indigo-500/20">
-          <Zap className="text-indigo-500 fill-indigo-500" size={32} />
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 selection:bg-indigo-500/30">
+      <div className="max-w-2xl w-full text-center space-y-12">
+        
+        {/* Brand Header */}
+        <div className="space-y-4">
+          <div className="flex justify-center items-center gap-3">
+             <div className="bg-gradient-to-br from-cyan-400 to-indigo-600 p-3 rounded-2xl shadow-2xl shadow-indigo-500/20">
+               <Zap className="text-black fill-black" size={32} />
+             </div>
+             <span className="text-5xl font-black italic tracking-tighter uppercase whitespace-nowrap bg-gradient-to-r from-white to-slate-500 bg-clip-text text-transparent">Ranko AI</span>
+          </div>
+          <p className="text-indigo-400 font-black uppercase tracking-[0.3em] text-[10px] italic">{t.tagline}</p>
         </div>
-        <h1 className="text-4xl font-black italic uppercase tracking-tighter mb-4 bg-gradient-to-r from-white to-slate-500 bg-clip-text text-transparent">Ranko AI</h1>
-        <p className="text-slate-500 mb-10 text-[10px] uppercase tracking-[0.2em] font-black italic">Reputation Defense System</p>
-        <button 
-          onClick={loginWithGoogle}
-          className="w-full bg-white text-black py-5 rounded-2xl font-black uppercase italic tracking-wider transition-all transform active:scale-95 flex items-center justify-center gap-3 hover:bg-cyan-400"
-        >
-          <Globe size={20} /> Login with Google
-        </button>
+
+        {/* Feature Box */}
+        <div className="bg-slate-900/50 border border-white/5 rounded-[3rem] p-12 backdrop-blur-xl shadow-2xl space-y-10">
+          <p className="text-slate-400 text-sm leading-relaxed uppercase tracking-widest font-medium">
+            {t.loginDesc}
+          </p>
+          
+          <button 
+            onClick={loginWithGoogle} 
+            className="w-full bg-white text-slate-950 hover:bg-cyan-400 hover:scale-[1.02] transition-all py-6 rounded-2xl font-black uppercase italic tracking-widest flex items-center justify-center gap-4 shadow-xl shadow-white/5"
+          >
+            <Globe size={22} /> Access Control Center
+          </button>
+        </div>
+
+        {/* Floating Badges */}
+        <div className="flex flex-wrap justify-center gap-4 opacity-50">
+          {['Google My Business', 'Real-Time Alerts', 'AI Training'].map((tag) => (
+            <span key={tag} className="text-[9px] font-black uppercase tracking-widest border border-white/10 px-4 py-2 rounded-full text-slate-500">
+              {tag}
+            </span>
+          ))}
+        </div>
+
+        {/* Legal Footer */}
+        <div className="pt-12 flex justify-center gap-8 text-[9px] font-black uppercase tracking-widest text-slate-600">
+          <a href="#" className="hover:text-indigo-400 transition-colors">Terms of Service</a>
+          <span className="text-slate-800">//</span>
+          <a href="#" className="hover:text-indigo-400 transition-colors">Privacy Framework</a>
+          <span className="text-slate-800">//</span>
+          <a href="mailto:support@rankoai.com" className="hover:text-indigo-400 transition-colors">Global Support</a>
+        </div>
       </div>
     </div>
   );
 
+  // --- DASHBOARD SECTION ---
   return (
-    <main className="min-h-screen bg-slate-950 text-white font-sans overflow-x-hidden selection:bg-indigo-500/30">
+    <main className="min-h-screen bg-slate-950 text-white font-sans overflow-x-hidden">
       <nav className="border-b border-white/5 bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-cyan-400 to-indigo-600 p-2 rounded-xl shadow-lg shadow-cyan-500/20">
+            <div className="bg-gradient-to-br from-cyan-400 to-indigo-600 p-2 rounded-xl">
               <Zap className="text-black fill-black" size={20} />
             </div>
             <span className="text-2xl font-black italic tracking-tighter uppercase whitespace-nowrap bg-gradient-to-r from-white to-slate-500 bg-clip-text text-transparent">Ranko AI</span>
-            <span className="hidden md:block text-[8px] font-black uppercase tracking-[0.3em] text-slate-600 border border-white/5 px-2 py-1 rounded-full ml-2">Global Hospitality Tech</span>
           </div>
           <button onClick={() => logout()} className="text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/10 transition-all">Logout</button>
         </div>
@@ -209,108 +226,104 @@ export default function LandingPage() {
             { label: t.happiness, val: `${stats.happiness}%`, icon: Heart, color: 'text-rose-400' },
             { label: t.timeSaved, val: stats.timeSaved, icon: Clock, color: 'text-emerald-400' },
           ].map((s, i) => (
-            <div key={i} className="bg-slate-900/40 border border-white/5 p-6 rounded-[2.5rem] relative overflow-hidden group hover:border-white/10 transition-all">
-              <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <s.icon className={`${s.color} mb-4`} size={20} />
-              <div className="text-4xl font-black italic tracking-tighter mb-1">{s.val}</div>
+            <div key={i} className="bg-slate-900/40 border border-white/5 p-6 rounded-[2rem]">
+              <s.icon className={`${s.color} mb-3`} size={20} />
+              <div className="text-3xl font-black italic tracking-tighter">{s.val}</div>
               <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{s.label}</div>
             </div>
           ))}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Sidebar */}
           <div className="lg:col-span-4 space-y-6">
-            <div className="bg-slate-900/60 border border-white/5 p-8 rounded-[3rem]">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-8 flex items-center gap-2">
-                <LayoutDashboard size={14}/> {t.selectBiz}
-              </h3>
-              <div className="space-y-3">
+            <div className="bg-slate-900/60 border border-white/5 p-6 rounded-[2.5rem]">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">{t.selectBiz}</h3>
+              <div className="space-y-2">
                 {myBusinesses.map((b) => (
-                  <button key={b.id} onClick={() => { setSelectedBusiness(b); applyBusinessData(b); }} className={`w-full text-left p-5 rounded-2xl border transition-all ${selectedBusiness?.id === b.id ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl shadow-indigo-600/20' : 'bg-slate-950/50 border-white/5 text-slate-500 hover:border-white/20'}`}>
-                    <span className="text-[11px] font-black uppercase italic truncate">{b.business_name}</span>
+                  <button key={b.id} onClick={() => { setSelectedBusiness(b); applyBusinessData(b); }} className={`w-full text-left p-4 rounded-2xl border transition-all ${selectedBusiness?.id === b.id ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl shadow-indigo-600/20' : 'bg-slate-950/50 border-white/5 text-slate-500'}`}>
+                    <span className="text-[11px] font-black uppercase italic">{b.business_name}</span>
                   </button>
                 ))}
               </div>
             </div>
             
-            <div className="bg-slate-900/60 border border-white/5 p-8 rounded-[3rem]">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-8">{t.growthTools}</h3>
-              <button onClick={() => downloadQR(selectedBusiness)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 p-5 rounded-2xl flex items-center gap-4 group transition-all">
-                <div className="w-12 h-12 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-black transition-all">
-                  <QrCode size={24} />
-                </div>
+            <div className="bg-slate-900/60 border border-white/5 p-6 rounded-[2.5rem]">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">{t.growthTools}</h3>
+              <button onClick={() => downloadQR(selectedBusiness)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 p-4 rounded-2xl flex items-center gap-4 group">
+                <QrCode className="text-indigo-400 group-hover:scale-110 transition-transform" size={24} />
                 <div className="text-left">
-                  <div className="text-[11px] font-black uppercase italic tracking-tighter">{t.smartInterceptor}</div>
+                  <div className="text-[11px] font-black uppercase italic">{t.smartInterceptor}</div>
                   <div className="text-[9px] text-slate-500 uppercase font-bold">{t.downloadQr}</div>
                 </div>
               </button>
             </div>
           </div>
 
-          <div className="lg:col-span-8 bg-slate-900 border border-white/5 rounded-[3.5rem] overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-3 flex bg-black/40 gap-2 border-b border-white/5">
+          <div className="lg:col-span-8 bg-slate-900 border border-white/5 rounded-[2.5rem] overflow-hidden flex flex-col">
+            <div className="p-2 flex bg-black/40 gap-2 border-b border-white/5">
               {[
                 { id: 'overview', icon: LayoutDashboard },
                 { id: 'strategy', icon: ShieldAlert },
                 { id: 'growth', icon: Zap }
               ].map((tab) => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-4 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}>
+                <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-4 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300'}`}>
                   <tab.icon size={14}/> {t[tab.id]}
                 </button>
               ))}
             </div>
 
-            <div className="p-12 flex-1">
+            <div className="p-8 flex-1">
               {activeTab === 'overview' && (
-                <div className="space-y-10 animate-in fade-in duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Languages size={14}/> {t.langMode}</label>
-                      <div className="flex bg-slate-950 p-1 rounded-2xl border border-white/5">
-                        <button onClick={() => setReplyLang('es')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase italic transition-all ${replyLang === 'es' ? 'bg-white text-black shadow-xl' : 'text-slate-600'}`}>ESPAÑOL</button>
-                        <button onClick={() => setReplyLang('pt')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase italic transition-all ${replyLang === 'pt' ? 'bg-white text-black shadow-xl' : 'text-slate-600'}`}>PORTUGUÊS</button>
+                <div className="space-y-8 animate-in fade-in duration-500">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.langMode}</label>
+                      <div className="flex bg-slate-950 p-1 rounded-xl border border-white/5">
+                        <button onClick={() => setReplyLang('es')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase italic transition-all ${replyLang === 'es' ? 'bg-white text-black shadow-md' : 'text-slate-600'}`}>ESPAÑOL</button>
+                        <button onClick={() => setReplyLang('pt')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase italic transition-all ${replyLang === 'pt' ? 'bg-white text-black shadow-md' : 'text-slate-600'}`}>PORTUGUÊS</button>
                       </div>
                     </div>
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Phone size={14}/> {t.waNotifications}</label>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.waNotifications}</label>
                       <div className="relative">
                         <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
-                        <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 pl-12 rounded-2xl text-sm font-bold outline-none focus:border-indigo-500 transition-all shadow-inner" />
+                        <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-3 pl-10 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 transition-all" />
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Settings size={14}/> {t.brainLabel}</label>
-                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.brainPlaceholder} className="w-full bg-slate-950 border border-white/5 p-8 rounded-[2.5rem] text-sm leading-relaxed min-h-[180px] outline-none focus:border-indigo-500 transition-all shadow-inner" />
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.brainLabel}</label>
+                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.brainPlaceholder} className="w-full bg-slate-950 border border-white/5 p-5 rounded-2xl text-xs leading-relaxed min-h-[160px] outline-none focus:border-indigo-500 transition-all" />
                   </div>
                 </div>
               )}
 
               {activeTab === 'strategy' && (
-                <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="bg-slate-950/50 p-8 rounded-[2.5rem] space-y-8 border border-white/5">
+                <div className="space-y-6">
+                  <div className="bg-slate-950/50 p-6 rounded-2xl space-y-6 border border-white/5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-500 border border-emerald-500/20"><Zap size={24}/></div>
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500"><Zap size={20}/></div>
                         <div>
-                          <div className="text-[11px] font-black uppercase italic tracking-tighter">{t.autoReply5}</div>
+                          <div className="text-[11px] font-black uppercase italic">{t.autoReply5}</div>
                           <div className="text-[9px] text-slate-600 uppercase font-bold">{t.handsFree}</div>
                         </div>
                       </div>
-                      <button onClick={() => setAutoReply5(!autoReply5)} className={`w-16 h-9 rounded-full relative transition-all ${autoReply5 ? 'bg-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-slate-800'}`}>
-                        <div className={`absolute top-1.5 w-6 h-6 bg-white rounded-full transition-all ${autoReply5 ? 'right-1.5' : 'left-1.5'}`} />
+                      <button onClick={() => setAutoReply5(!autoReply5)} className={`w-12 h-7 rounded-full relative transition-all ${autoReply5 ? 'bg-indigo-600' : 'bg-slate-800'}`}>
+                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${autoReply5 ? 'right-1' : 'left-1'}`} />
                       </button>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 bg-rose-500/10 rounded-2xl flex items-center justify-center text-rose-500 border border-rose-500/20"><ShieldAlert size={24}/></div>
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-rose-500/10 rounded-xl flex items-center justify-center text-rose-500"><ShieldAlert size={20}/></div>
                         <div>
-                          <div className="text-[11px] font-black uppercase italic tracking-tighter">{t.crisisNotif}</div>
+                          <div className="text-[11px] font-black uppercase italic">{t.crisisNotif}</div>
                           <div className="text-[9px] text-slate-600 uppercase font-bold">{t.alertOwner}</div>
                         </div>
                       </div>
-                      <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-16 h-9 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-600' : 'bg-slate-800'}`}>
-                        <div className={`absolute top-1.5 w-6 h-6 bg-white rounded-full transition-all ${notifyNegative ? 'right-1.5' : 'left-1.5'}`} />
+                      <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-12 h-7 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-600' : 'bg-slate-800'}`}>
+                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${notifyNegative ? 'right-1' : 'left-1'}`} />
                       </button>
                     </div>
                   </div>
@@ -318,63 +331,53 @@ export default function LandingPage() {
               )}
 
               {activeTab === 'growth' && (
-                <div className="space-y-10 animate-in fade-in duration-500">
-                  <div className="bg-slate-950/50 p-8 rounded-[2.5rem] space-y-10 border border-white/5">
+                <div className="space-y-6">
+                  <div className="bg-slate-950/50 p-6 rounded-2xl space-y-6 border border-white/5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-cyan-500 border border-cyan-500/20"><Gift size={24}/></div>
-                        <span className="text-[11px] font-black uppercase tracking-tighter italic">{t.automaticCoupon}</span>
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-cyan-500/10 rounded-xl flex items-center justify-center text-cyan-500"><Gift size={20}/></div>
+                        <span className="text-[11px] font-black uppercase italic">{t.automaticCoupon}</span>
                       </div>
-                      <button onClick={() => setAutoCoupon(!autoCoupon)} className={`w-16 h-9 rounded-full relative transition-all ${autoCoupon ? 'bg-indigo-600' : 'bg-slate-800'}`}>
-                        <div className={`absolute top-1.5 w-6 h-6 bg-white rounded-full transition-all ${autoCoupon ? 'right-1.5' : 'left-1.5'}`} />
+                      <button onClick={() => setAutoCoupon(!autoCoupon)} className={`w-12 h-7 rounded-full relative transition-all ${autoCoupon ? 'bg-indigo-600' : 'bg-slate-800'}`}>
+                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${autoCoupon ? 'right-1' : 'left-1'}`} />
                       </button>
                     </div>
                     {autoCoupon && (
-                      <div className="space-y-4 pt-2 animate-in slide-in-from-top-4 duration-300">
+                      <div className="space-y-3 pt-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-cyan-400">{t.couponDetail}</label>
-                        <input type="text" value={promoText} onChange={(e) => setPromoText(e.target.value)} placeholder={t.couponPlaceholder} className="w-full bg-slate-900 border border-white/5 p-5 rounded-2xl text-sm font-bold outline-none focus:border-cyan-500 transition-all shadow-inner" />
+                        <input type="text" value={promoText} onChange={(e) => setPromoText(e.target.value)} placeholder={t.couponPlaceholder} className="w-full bg-slate-900 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-cyan-500 transition-all" />
                       </div>
                     )}
-                    <div className="space-y-4 pt-6 border-t border-white/5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.interceptorMode}</label>
-                      <select value={interceptorMode} onChange={(e) => setInterceptorMode(e.target.value)} className="w-full bg-slate-900 border border-white/5 p-5 rounded-2xl text-[10px] font-black uppercase italic text-white outline-none focus:border-indigo-500 appearance-none cursor-pointer">
-                        <option value="safe">{t.balanced}</option>
-                        <option value="aggressive">{t.aggressive}</option>
-                        <option value="minimal">{t.minimal}</option>
-                      </select>
-                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="p-8 bg-black border-t border-white/5 flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 italic">RANKO ENGINE v2.1 // BUZIOS-ARG</span>
-              <button onClick={handleSave} disabled={isSaving} className="bg-white text-black px-12 py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:bg-cyan-400 hover:scale-105 disabled:opacity-50 flex items-center gap-3 shadow-xl">
-                {isSaving ? <Loader2 className="animate-spin" size={18} /> : <ShieldCheck size={20} />}
+            <div className="p-6 bg-black border-t border-white/5 flex items-center justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic">RANKO ENGINE v2.1 // BUZIOS-ARG</span>
+              <button onClick={handleSave} disabled={isSaving} className="bg-white text-black px-10 py-4 rounded-xl font-black uppercase italic tracking-widest transition-all hover:bg-cyan-400 disabled:opacity-50 flex items-center gap-2">
+                {isSaving ? <Loader2 className="animate-spin" size={14} /> : <ShieldCheck size={16} />}
                 {isSaving ? t.saving : t.deployBtn}
               </button>
             </div>
           </div>
         </div>
-
-        <div className="mt-20 border-t border-white/5 grid grid-cols-1 md:grid-cols-3 gap-16 py-12">
-          <div className="space-y-6">
-            <div className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-white to-slate-500 bg-clip-text text-transparent">Ranko AI</div>
-            <p className="text-[10px] text-slate-600 uppercase tracking-widest leading-relaxed font-bold italic">Elevating hospitality through<br/>Active Reputation Defense Systems.</p>
+        
+        {/* FOOTER SECTION */}
+        <div className="mt-12 border-t border-white/5 grid grid-cols-1 md:grid-cols-3 gap-12 py-8">
+          <div className="space-y-4">
+            <div className="text-xl font-black italic tracking-tighter uppercase text-indigo-400">RANKO AI</div>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-relaxed">Elevating hospitality through<br/>Active Reputation Defense.</p>
           </div>
-          <div className="space-y-6">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Direct Support</h4>
-            <div className="space-y-3">
-              <a href="mailto:support@rankoai.com" className="flex items-center gap-3 text-[11px] font-bold text-slate-500 hover:text-indigo-400 transition-colors uppercase"><Mail size={16}/> support@rankoai.com</a>
-              <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500 uppercase"><Globe size={16}/> Búzios // Argentina</div>
-            </div>
+          <div className="space-y-4 text-center md:text-left">
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-300">Support</h4>
+            <a href="mailto:support@rankoai.com" className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors justify-center md:justify-start"><Mail size={14}/> support@rankoai.com</a>
           </div>
-          <div className="space-y-6">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Legal Architecture</h4>
-            <div className="flex flex-col gap-3">
-              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-indigo-400 transition-colors uppercase italic">Terms of Service</a>
-              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-indigo-400 transition-colors uppercase italic">Privacy Framework</a>
+          <div className="space-y-4 text-center md:text-left">
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-300">Legal</h4>
+            <div className="flex flex-col gap-2">
+              <a href="#" className="text-xs text-slate-500 hover:text-indigo-400 transition-colors">Terms of Service</a>
+              <a href="#" className="text-xs text-slate-500 hover:text-indigo-400 transition-colors">Privacy Policy</a>
             </div>
           </div>
         </div>
