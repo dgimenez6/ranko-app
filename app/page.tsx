@@ -108,9 +108,7 @@ export default function LandingPage() {
         setSelectedBusiness(first);
         applyBusinessData(first);
 
-        const bizIds = businesses.map(b => b.id);
-        const { data: logs } = await supabase.from('reviews_logs').select('stars, status').in('business_id', bizIds);
-
+        const { data: logs } = await supabase.from('reviews_logs').select('stars, status').in('business_id', businesses.map(b => b.id));
         if (logs) {
           const valid = logs.filter(l => l.stars != null);
           const posted = logs.filter(l => l.status === 'posted').length;
@@ -142,22 +140,15 @@ export default function LandingPage() {
     if (!selectedBusiness) return;
     setIsSaving(true);
     try {
-      const { error: bizError } = await supabase.from('businesses').update({
+      await supabase.from('businesses').update({
         language: replyLang, business_info: bizInfo, reply_tone: aiTone,
         promo_text: promoText, auto_reply_5_stars: autoReply5,
         notify_negative_reviews: notifyNegative, auto_coupon: autoCoupon,
         interceptor_mode: interceptorMode
       }).eq('id', selectedBusiness.id);
 
-      if (bizError) throw bizError;
-
       const phone = whatsappNumber.replace(/\D/g, '');
-      const { error: waError } = await supabase.from('whatsapp_configs').upsert({ 
-        business_id: selectedBusiness.id, 
-        phone_number: phone 
-      }, { onConflict: 'business_id' });
-
-      if (waError) throw waError;
+      await supabase.from('whatsapp_configs').upsert({ business_id: selectedBusiness.id, phone_number: phone }, { onConflict: 'business_id' });
       
       alert(replyLang === 'pt' ? "Alterações salvas!" : "¡Cambios guardados!");
       fetchData(user);
@@ -167,57 +158,64 @@ export default function LandingPage() {
   if (loading) return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
       <Loader2 className="animate-spin text-emerald-500" size={40} />
-      <span className="text-[10px] font-black tracking-[0.3em] text-slate-700 uppercase">Ranko AI Loading</span>
+      <span className="text-[10px] font-black tracking-[0.4em] text-slate-700 uppercase">Ranko AI Loading</span>
     </div>
   );
 
+  // LANDING PRINCIPAL CORREGIDA (Centrado Mobile y Logo no cortado)
   if (!user) return (
     <div className="min-h-screen bg-[#020617] text-white flex flex-col font-sans selection:bg-emerald-500/30">
-      <nav className="max-w-7xl mx-auto w-full px-6 py-8 flex justify-between items-center">
-        <div className="flex items-center gap-3 min-w-fit pl-4">
-          <span className="text-3xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap">Ranko AI</span>
+      <nav className="max-w-7xl mx-auto w-full px-6 py-8 flex flex-col sm:flex-row justify-between items-center gap-6">
+        <div className="flex items-center justify-center min-w-fit pr-8">
+          <span className="text-3xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap">
+            Ranko AI
+          </span>
         </div>
         <button onClick={loginWithGoogle} className="bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Login</button>
       </nav>
 
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 max-w-5xl mx-auto space-y-12 pb-20">
-        <h1 className="text-7xl md:text-9xl font-black italic tracking-tighter leading-[0.85] uppercase animate-in slide-in-from-bottom-8 duration-700">{t.heroTitle}</h1>
-        <p className="max-w-2xl text-slate-400 text-sm md:text-base leading-relaxed uppercase tracking-widest font-medium opacity-80">{t.heroSub}</p>
+        <h1 className="text-5xl md:text-9xl font-black italic tracking-tighter leading-[0.85] uppercase animate-in slide-in-from-bottom-8 duration-700">
+          {t.heroTitle}
+        </h1>
+        <p className="max-w-2xl text-slate-400 text-sm md:text-base leading-relaxed uppercase tracking-widest font-medium opacity-80">
+          {t.heroSub}
+        </p>
         <button onClick={loginWithGoogle} className="group relative bg-emerald-600 hover:bg-emerald-500 text-white px-12 py-6 rounded-2xl font-black uppercase italic tracking-widest transition-all shadow-[0_0_40px_rgba(16,185,129,0.2)] flex items-center gap-4 active:scale-95">
           {t.getStarted} <ArrowRight className="group-hover:translate-x-2 transition-transform" />
         </button>
       </div>
 
       <footer className="max-w-7xl mx-auto w-full px-6 py-16 border-t border-white/5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-16 text-center md:text-left">
           <div className="space-y-6">
-            <div className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap">Ranko AI</div>
+            <div className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</div>
             <p className="text-[10px] text-slate-600 uppercase tracking-widest leading-relaxed italic">Active Reputation Defense.</p>
           </div>
           <div className="space-y-6">
             <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Support</h4>
-            <a href="mailto:support@rankoai.com" className="flex items-center gap-3 text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase"><Mail size={16}/> support@rankoai.com</a>
+            <a href="mailto:support@rankoai.com" className="flex items-center justify-center md:justify-start gap-3 text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase"><Mail size={16}/> support@rankoai.com</a>
           </div>
           <div className="space-y-6">
             <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Legal</h4>
             <div className="flex flex-col gap-3">
-              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">Terms of Service</a>
-              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">Privacy Policy</a>
+              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">Terms</a>
+              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">Privacy</a>
             </div>
           </div>
         </div>
-        <div className="pt-16 text-center text-[9px] font-black text-slate-800 uppercase tracking-[0.5em]">© 2026 RANKO AI - SCALABLE HOSPITALITY SOLUTIONS</div>
       </footer>
     </div>
   );
 
+  // DASHBOARD CORREGIDO (Logo no cortado)
   return (
     <main className="min-h-screen bg-slate-950 text-white font-sans overflow-x-hidden selection:bg-emerald-500/30">
       <nav className="border-b border-white/5 bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4 min-w-0 pl-2">
+          <div className="flex items-center gap-4 min-w-0 pr-8">
             <div className="bg-gradient-to-br from-indigo-600 to-emerald-500 p-2 rounded-xl flex-shrink-0"><Zap className="text-white fill-white" size={18} /></div>
-            <span className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-4">Ranko AI</span>
+            <span className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</span>
           </div>
           <button onClick={() => logout()} className="text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/10 transition-all">Logout</button>
         </div>
@@ -276,7 +274,7 @@ export default function LandingPage() {
             <div className="p-8 flex-1">
               {activeTab === 'overview' && (
                 <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-center sm:text-left">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.langMode}</label>
                       <div className="flex bg-slate-950 p-1 rounded-xl border border-white/5">
