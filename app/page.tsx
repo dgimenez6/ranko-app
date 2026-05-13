@@ -61,7 +61,7 @@ export default function LandingPage() {
       selectBiz: 'SEUS NEGÓCIOS', growthTools: 'CRESCIMENTO',
       smartInterceptor: 'SMART QR INTERCEPTOR', downloadQr: 'BAIXAR QR',
       langMode: 'IDIOMA DE RESPOSTA', waNotifications: 'NOTIFICAÇÕES WHATSAPP',
-      brainLabel: 'CÉREBRO DA IA', brainPlaceholder: 'Dados do seu negócio para a IA...',
+      brainLabel: 'CÉREBRO DA IA', brainPlaceholder: 'Dados do seu negocio para a IA...',
       autoReply5: 'Resposta Auto 5★', handsFree: '100% Automático',
       crisisNotif: 'Notificação de Crise', alertOwner: 'Alertar proprietário',
       automaticCoupon: 'Cupom de Presente', couponDetail: 'Detalhe do Benefício',
@@ -162,12 +162,13 @@ export default function LandingPage() {
     </div>
   );
 
-  // LANDING PRINCIPAL CORREGIDA (Centrado Mobile y Logo no cortado)
+  // LANDING PRINCIPAL CORREGIDA (Sin recortes)
   if (!user) return (
     <div className="min-h-screen bg-[#020617] text-white flex flex-col font-sans selection:bg-emerald-500/30">
       <nav className="max-w-7xl mx-auto w-full px-6 py-8 flex flex-col sm:flex-row justify-between items-center gap-6">
-        <div className="flex items-center justify-center min-w-fit pr-8">
-          <span className="text-3xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap">
+        <div className="flex items-center justify-center min-w-fit">
+          {/* Ajuste de padding-right y display para evitar el recorte del degradado */}
+          <span className="inline-block text-3xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">
             Ranko AI
           </span>
         </div>
@@ -189,7 +190,7 @@ export default function LandingPage() {
       <footer className="max-w-7xl mx-auto w-full px-6 py-16 border-t border-white/5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-16 text-center md:text-left">
           <div className="space-y-6">
-            <div className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</div>
+            <div className="inline-block text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</div>
             <p className="text-[10px] text-slate-600 uppercase tracking-widest leading-relaxed italic">Active Reputation Defense.</p>
           </div>
           <div className="space-y-6">
@@ -208,19 +209,23 @@ export default function LandingPage() {
     </div>
   );
 
-  // DASHBOARD CORREGIDO (Logo no cortado)
+  // DASHBOARD
   return (
     <main className="min-h-screen bg-slate-950 text-white font-sans overflow-x-hidden selection:bg-emerald-500/30">
       <nav className="border-b border-white/5 bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4 min-w-0 pr-8">
+          <div className="flex items-center gap-4 min-w-0">
             <div className="bg-gradient-to-br from-indigo-600 to-emerald-500 p-2 rounded-xl flex-shrink-0"><Zap className="text-white fill-white" size={18} /></div>
-            <span className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</span>
+            {/* Logo Dashboard con el mismo ajuste de espacio */}
+            <span className="inline-block text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">
+              Ranko AI
+            </span>
           </div>
-          <button onClick={() => logout()} className="text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/10 transition-all">Logout</button>
+          <button onClick={() => logout()} className="text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/10 transition-all flex-shrink-0">Logout</button>
         </div>
       </nav>
 
+      {/* Stats Section */}
       <div className="max-w-7xl mx-auto px-6 py-10">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
           {[
