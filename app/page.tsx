@@ -5,7 +5,7 @@ import {
   ShieldCheck, MessageSquare, Zap, Star, Loader2, 
   Settings, Clock, QrCode, ArrowRight,
   LayoutDashboard, Heart, Globe, Phone, Mail, 
-  ShieldAlert, Gift, Languages
+  ShieldAlert, Gift, Languages, Target, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase/client';
@@ -19,7 +19,7 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'strategy' | 'growth'>('overview');
   const [stats, setStats] = useState({ totalReplies: 0, avgRating: 0, happiness: 0, timeSaved: '0h' });
 
-  // CONFIGURACIÓN
+  // CONFIGURACIÓN (Mapeada con DB)
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [replyLang, setReplyLang] = useState('es');
   const [bizInfo, setBizInfo] = useState('');
@@ -27,11 +27,11 @@ export default function LandingPage() {
   const [autoReply5, setAutoReply5] = useState(true); 
   const [notifyNegative, setNotifyNegative] = useState(true);
   const [aiTone, setAiTone] = useState('friendly');
-  const [promoText, setPromoText] = useState('');
   const [autoCoupon, setAutoCoupon] = useState(false);
+  const [promoText, setPromoText] = useState(''); // El beneficio: ej "Café Gratis"
   const [interceptorMode, setInterceptorMode] = useState('safe');
 
-  // DICCIONARIO DE TRADUCCIÓN
+  // DICCIONARIO DINÁMICO
   const content: any = {
     es: {
       totalReplies: 'Respuestas Totales',
@@ -40,28 +40,29 @@ export default function LandingPage() {
       timeSaved: 'Tiempo Ahorrado',
       selectBiz: 'Seleccionar Negocio',
       growthTools: 'Herramientas de Crecimiento',
-      smartInterceptor: 'Interceptor Inteligente',
+      smartInterceptor: 'Smart QR Interceptor',
       downloadQr: 'Descargar Etiqueta QR',
-      overview: 'Resumen',
-      strategy: 'Estrategia',
-      growth: 'Crecimiento',
+      overview: 'Overview',
+      strategy: 'Defense',
+      growth: 'Smart QR',
       langMode: 'Modo de Idioma',
       waNotifications: 'Notificaciones WhatsApp',
       brainLabel: 'Cerebro: Base de Conocimientos',
-      brainPlaceholder: 'Describí brevemente tu negocio (especialidades, menú, staff clave, etc.) para que la IA responda de forma personalizada...',
+      brainPlaceholder: 'Describí brevemente tu negocio para la IA...',
       autoReply5: 'Respuesta Auto 5 Estrellas',
       handsFree: 'Modo 100% Manos Libres',
       crisisNotif: 'Notificación de Crisis',
-      alertOwner: 'Alertar al dueño ante reseñas negativas',
+      alertOwner: 'Alerta al dueño ante críticas',
       aiTone: 'Tono de Personalidad IA',
       automaticCoupon: 'Cupón Automático en Feedback',
-      interceptorMode: 'Modo del Interceptor',
-      aggressiveDef: 'Defensa Agresiva (Redirigir 1-3★ a privado)',
-      balancedDef: 'Equilibrado (Redirigir 1-2★ a privado)',
-      minimalDef: 'Mínimo (Siempre mostrar link de Google)',
-      deployBtn: 'Implementar Cambios',
-      saving: 'Guardando...',
-      accessControl: 'Acceder al Centro de Control'
+      couponDetail: 'Detalle del Beneficio (Cupón)',
+      couponPlaceholder: 'Ej: Café de cortesía, 10% OFF...',
+      interceptorMode: 'Sensibilidad del Interceptor',
+      aggressiveDef: 'Defensa Agresiva (1-3★)',
+      balancedDef: 'Equilibrado (1-2★)',
+      minimalDef: 'Mínimo (Siempre Google)',
+      deployBtn: 'Deploy Changes',
+      saving: 'Saving...',
     },
     pt: {
       totalReplies: 'Respostas Totais',
@@ -70,28 +71,29 @@ export default function LandingPage() {
       timeSaved: 'Tempo Economizado',
       selectBiz: 'Selecionar Negócio',
       growthTools: 'Ferramentas de Crescimento',
-      smartInterceptor: 'Interceptor Inteligente',
+      smartInterceptor: 'Smart QR Interceptor',
       downloadQr: 'Baixar Etiqueta QR',
-      overview: 'Visão Geral',
-      strategy: 'Estratégia',
-      growth: 'Crescimento',
+      overview: 'Overview',
+      strategy: 'Defense',
+      growth: 'Smart QR',
       langMode: 'Modo de Idioma',
       waNotifications: 'Notificações WhatsApp',
       brainLabel: 'Cérebro: Base de Conhecimento',
-      brainPlaceholder: 'Descreva brevemente o seu negócio (especialidades, cardápio, equipe, etc.) para que a IA possa responder de forma personalizada...',
+      brainPlaceholder: 'Descreva seu negócio para a IA...',
       autoReply5: 'Resposta Automática 5 Estrelas',
       handsFree: 'Modo 100% Mãos Livres',
       crisisNotif: 'Notificação de Crise',
-      alertOwner: 'Alertar proprietário sobre avaliações negativas',
+      alertOwner: 'Alerta proprietário sobre críticas',
       aiTone: 'Tom de Personalidade da IA',
       automaticCoupon: 'Cupom Automático no Feedback',
-      interceptorMode: 'Modo do Interceptor',
-      aggressiveDef: 'Defesa Agresiva (Redirecionar 1-3★ para privado)',
-      balancedDef: 'Equilibrado (Redirecionar 1-2★ para privado)',
-      minimalDef: 'Mínimo (Sempre mostrar link do Google)',
-      deployBtn: 'Implementar Mudanças',
-      saving: 'Salvando...',
-      accessControl: 'Acessar Centro de Controle'
+      couponDetail: 'Detalhe do Benefício (Cupom)',
+      couponPlaceholder: 'Ex: Café de cortesia, 10% OFF...',
+      interceptorMode: 'Sensibilidade do Interceptor',
+      aggressiveDef: 'Defesa Agresiva (1-3★)',
+      balancedDef: 'Equilibrado (1-2★)',
+      minimalDef: 'Mínimo (Sempre Google)',
+      deployBtn: 'Deploy Changes',
+      saving: 'Saving...',
     }
   };
 
@@ -126,10 +128,7 @@ export default function LandingPage() {
         applyBusinessData(initialBiz);
 
         const bizIds = businesses.map(b => b.id);
-        const { data: logs } = await supabase
-          .from('reviews_logs')
-          .select('stars, status')
-          .in('business_id', bizIds);
+        const { data: logs } = await supabase.from('reviews_logs').select('stars, status').in('business_id', bizIds);
 
         if (logs) {
           const valid = logs.filter(l => l.stars != null);
@@ -142,11 +141,7 @@ export default function LandingPage() {
           });
         }
       }
-    } catch (error) { 
-      console.error("Error cargando dashboard:", error); 
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
   const applyBusinessData = (biz: any) => {
@@ -187,30 +182,19 @@ export default function LandingPage() {
       const cleanPhone = whatsappNumber.replace(/\D/g, '');
       const { error: waError } = await supabase
         .from('whatsapp_configs')
-        .upsert({
-          business_id: selectedBusiness.id,
-          phone_number: cleanPhone
-        }, { onConflict: 'business_id' });
+        .upsert({ business_id: selectedBusiness.id, phone_number: cleanPhone }, { onConflict: 'business_id' });
 
       if (waError) throw waError;
-
-      alert(replyLang === 'pt' ? 'Configurações salvas com sucesso!' : '¡Configuración guardada con éxito!');
+      alert(replyLang === 'pt' ? 'Configurações salvas!' : '¡Configuración guardada!');
       fetchData(user);
-    } catch (e: any) {
-      alert(`Error: ${e.message}`);
-    } finally {
-      setIsSaving(false);
-    }
+    } catch (e: any) { alert(`Error: ${e.message}`); } finally { setIsSaving(false); }
   };
 
   const downloadQR = (biz: any) => {
-    if (!biz?.id) return alert("ID no encontrado");
-    const interceptorUrl = `https://rankoai.com/review/${biz.id}`;
-    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(interceptorUrl)}&ecc=H`;
-    
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(`https://rankoai.com/review/${biz.id}`)}&ecc=H`;
     const link = document.createElement('a');
-    link.href = qrImageUrl;
-    link.download = `RankoQR-${biz.business_name}.png`;
+    link.href = url;
+    link.download = `QR-${biz.business_name}.png`;
     link.target = "_blank";
     link.click();
   };
@@ -218,190 +202,188 @@ export default function LandingPage() {
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4">
       <Loader2 className="animate-spin text-indigo-500" size={48} />
-      <p className="text-slate-500 font-black uppercase tracking-[0.3em] animate-pulse">Ranko AI Loading</p>
-    </div>
-  );
-
-  if (!user) return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-      <div className="max-w-md w-full bg-slate-900 border border-white/5 rounded-[3rem] p-12 text-center shadow-2xl">
-        <div className="mb-8 inline-flex items-center justify-center w-20 h-20 bg-indigo-500/10 rounded-3xl border border-indigo-500/20">
-          <Zap className="text-indigo-500 fill-indigo-500" size={32} />
-        </div>
-        <h1 className="text-4xl font-black italic uppercase tracking-tighter mb-4">Ranko AI</h1>
-        <p className="text-slate-400 mb-10 text-sm leading-relaxed uppercase tracking-widest font-medium">Reputation Management & Local SEO Automation</p>
-        <button 
-          onClick={loginWithGoogle}
-          className="w-full bg-indigo-500 hover:bg-indigo-400 text-slate-950 py-5 rounded-2xl font-black uppercase italic tracking-wider transition-all transform active:scale-95 flex items-center justify-center gap-3"
-        >
-          <Globe size={20} /> {t.accessControl}
-        </button>
-      </div>
+      <p className="text-slate-500 font-black uppercase tracking-[0.3em]">RANKO AI</p>
     </div>
   );
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500/30">
-      <nav className="border-b border-white/5 bg-slate-950/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+    <main className="min-h-screen bg-slate-950 text-white font-sans selection:bg-cyan-500/30">
+      {/* NAV ORIGINAL */}
+      <nav className="border-b border-white/5 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-6 py-5 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.3)]">
-              <Zap className="text-slate-950 fill-slate-950" size={18} />
+            <div className="bg-gradient-to-br from-cyan-400 to-indigo-600 p-2 rounded-xl shadow-lg shadow-cyan-500/20">
+              <Zap className="text-slate-950 fill-slate-950" size={20} />
             </div>
-            <span className="text-xl font-black italic tracking-tighter uppercase">Ranko</span>
+            <span className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Ranko AI</span>
+            <span className="hidden md:block text-[8px] font-black uppercase tracking-[0.3em] text-slate-500 border border-white/10 px-2 py-1 rounded-full ml-2">Global Hospitality Tech</span>
           </div>
-          <button onClick={logout} className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Sign Out</button>
+          <button onClick={logout} className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Sign Out</button>
         </div>
       </nav>
 
+      {/* STATS STRIP */}
       <div className="max-w-6xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           {[
-            { label: t.totalReplies, val: stats.totalReplies, icon: MessageSquare, color: 'text-indigo-400' },
-            { label: t.avgRating, val: stats.avgRating, icon: Star, color: 'text-amber-400' },
-            { label: t.happiness, val: `${stats.happiness}%`, icon: Heart, color: 'text-rose-400' },
-            { label: t.timeSaved, val: stats.timeSaved, icon: Clock, color: 'text-emerald-400' },
+            { label: t.totalReplies, val: stats.totalReplies, icon: MessageSquare, color: 'from-indigo-500 to-purple-500' },
+            { label: t.avgRating, val: stats.avgRating, icon: Star, color: 'from-amber-400 to-orange-500' },
+            { label: t.happiness, val: `${stats.happiness}%`, icon: Heart, color: 'from-rose-500 to-pink-500' },
+            { label: t.timeSaved, val: stats.timeSaved, icon: Clock, color: 'from-emerald-400 to-cyan-500' },
           ].map((s, i) => (
-            <div key={i} className="bg-slate-900/50 border border-white/5 p-6 rounded-[2.5rem] group hover:border-indigo-500/20 transition-all">
-              <s.icon className={`${s.color} mb-3`} size={20} />
-              <div className="text-3xl font-black italic tracking-tighter mb-1">{s.val}</div>
+            <div key={i} className="bg-slate-900/40 border border-white/5 p-8 rounded-[2.5rem] relative overflow-hidden group">
+              <div className={`absolute top-0 left-0 w-1 h-full bg-gradient-to-b ${s.color}`} />
+              <s.icon className="text-slate-600 mb-4 group-hover:text-white transition-colors" size={20} />
+              <div className="text-4xl font-black italic tracking-tighter mb-1">{s.val}</div>
               <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
+      {/* DASHBOARD GRID */}
       <div className="max-w-6xl mx-auto px-6 pb-24 grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-slate-900 border border-white/5 p-8 rounded-[3rem]">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-2">
-              <LayoutDashboard size={14}/> {t.selectBiz}
-            </h3>
+          <div className="bg-slate-900/60 border border-white/5 p-8 rounded-[3rem]">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-8 flex items-center gap-2">LOCATIONS</h3>
             <div className="space-y-3">
               {myBusinesses.map((b) => (
-                <button 
-                  key={b.id}
-                  onClick={() => { setSelectedBusiness(b); applyBusinessData(b); }}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between group ${selectedBusiness?.id === b.id ? 'bg-indigo-500 border-indigo-400 text-slate-950' : 'bg-slate-950/50 border-white/5 hover:border-white/20 text-slate-400'}`}
-                >
-                  <span className="text-sm font-bold truncate pr-2">{b.business_name}</span>
-                  {selectedBusiness?.id === b.id && <ArrowRight size={16} />}
+                <button key={b.id} onClick={() => { setSelectedBusiness(b); applyBusinessData(b); }} className={`w-full text-left p-5 rounded-2xl border transition-all ${selectedBusiness?.id === b.id ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl shadow-indigo-600/20' : 'bg-slate-950/50 border-white/5 text-slate-500 hover:border-white/20'}`}>
+                  <span className="text-xs font-black uppercase italic truncate">{b.business_name}</span>
                 </button>
               ))}
             </div>
           </div>
-
-          <div className="bg-slate-900 border border-white/5 p-8 rounded-[3rem]">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">{t.growthTools}</h3>
-            <button onClick={() => downloadQR(selectedBusiness)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 p-5 rounded-2xl text-left flex items-center gap-4 transition-all group">
-              <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500 group-hover:text-slate-950 transition-all">
-                <QrCode size={20} />
-              </div>
-              <div>
-                <div className="text-sm font-black uppercase italic">{t.smartInterceptor}</div>
-                <div className="text-[10px] text-slate-500 uppercase font-bold">{t.downloadQr}</div>
-              </div>
-            </button>
-          </div>
         </div>
 
         <div className="lg:col-span-8 bg-slate-900 border border-white/5 rounded-[3rem] overflow-hidden flex flex-col">
-          <div className="p-1 text-center bg-white/5 flex">
-            {['overview', 'strategy', 'growth'].map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-slate-950 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}>
-                {t[tab]}
+          {/* TABS ORIGINALES */}
+          <div className="p-3 flex bg-slate-950/50 gap-2 border-b border-white/5">
+            {[
+              { id: 'overview', icon: LayoutDashboard },
+              { id: 'strategy', icon: ShieldAlert },
+              { id: 'growth', icon: Zap }
+            ].map((tab) => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-4 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}>
+                <tab.icon size={14}/> {t[tab.id]}
               </button>
             ))}
           </div>
 
-          <div className="p-10 flex-1">
+          <div className="p-12 flex-1">
             {activeTab === 'overview' && (
-              <div className="space-y-10 animate-in fade-in duration-500">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Languages size={14}/> {t.langMode}</label>
-                    <div className="flex bg-slate-950 p-1 rounded-2xl border border-white/5">
-                      <button onClick={() => setReplyLang('es')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase italic transition-all ${replyLang === 'es' ? 'bg-indigo-500 text-slate-950' : 'text-slate-600'}`}>Español</button>
-                      <button onClick={() => setReplyLang('pt')} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase italic transition-all ${replyLang === 'pt' ? 'bg-indigo-500 text-slate-950' : 'text-slate-600'}`}>Português</button>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Phone size={14}/> {t.waNotifications}</label>
-                    <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-2xl text-sm font-bold outline-none focus:border-indigo-500 transition-all" />
-                  </div>
+              <div className="space-y-12 animate-in fade-in duration-500">
+                <div className="bg-slate-950/50 p-8 rounded-[2rem] border border-white/5">
+                   <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-8 flex items-center gap-2">BASE SETTINGS</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">REPLY LANGUAGE</label>
+                        <div className="flex bg-slate-900 p-1 rounded-2xl border border-white/5">
+                          <button onClick={() => setReplyLang('es')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase italic transition-all ${replyLang === 'es' ? 'bg-white text-slate-950 shadow-xl' : 'text-slate-600'}`}>ESPAÑOL</button>
+                          <button onClick={() => setReplyLang('pt')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase italic transition-all ${replyLang === 'pt' ? 'bg-white text-slate-950 shadow-xl' : 'text-slate-600'}`}>PORTUGUÊS</button>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">WHATSAPP ALERTS</label>
+                        <div className="relative group">
+                          <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400" size={16}/>
+                          <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-900 border border-white/5 p-4 pl-12 rounded-2xl text-sm font-bold outline-none focus:border-indigo-500 transition-all" />
+                        </div>
+                      </div>
+                   </div>
                 </div>
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Settings size={14}/> {t.brainLabel}</label>
-                  <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.brainPlaceholder} className="w-full bg-slate-950 border border-white/5 p-6 rounded-[2rem] text-sm leading-relaxed min-h-[160px] outline-none focus:border-indigo-400 transition-all" />
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">BUSINESS BRAIN DATA</label>
+                  <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={t.brainPlaceholder} className="w-full bg-slate-950 border border-white/5 p-8 rounded-[2.5rem] text-sm leading-relaxed min-h-[180px] outline-none focus:border-indigo-500 transition-all" />
                 </div>
               </div>
             )}
 
             {activeTab === 'strategy' && (
-              <div className="space-y-8 animate-in fade-in duration-500">
-                <div className="bg-slate-950/50 border border-white/5 p-6 rounded-3xl space-y-6">
+              <div className="space-y-10 animate-in fade-in duration-500">
+                <div className="bg-slate-950/50 p-8 rounded-[2.5rem] space-y-8 border border-white/5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500"><Zap size={20}/></div>
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-500 border border-emerald-500/20"><Zap size={24}/></div>
                       <div>
-                        <div className="text-sm font-black uppercase italic">{t.autoReply5}</div>
-                        <div className="text-[10px] text-slate-500 uppercase font-bold">{t.handsFree}</div>
+                        <div className="text-sm font-black uppercase italic tracking-tighter">{t.autoReply5}</div>
+                        <div className="text-[10px] text-slate-600 uppercase font-bold">{t.handsFree}</div>
                       </div>
                     </div>
-                    <button onClick={() => setAutoReply5(!autoReply5)} className={`w-14 h-8 rounded-full relative transition-all ${autoReply5 ? 'bg-indigo-500' : 'bg-slate-800'}`}>
-                      <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${autoReply5 ? 'right-1' : 'left-1'}`} />
+                    <button onClick={() => setAutoReply5(!autoReply5)} className={`w-16 h-9 rounded-full relative transition-all ${autoReply5 ? 'bg-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-slate-800'}`}>
+                      <div className={`absolute top-1.5 w-6 h-6 bg-white rounded-full transition-all ${autoReply5 ? 'right-1.5' : 'left-1.5'}`} />
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-rose-500/10 rounded-xl flex items-center justify-center text-rose-500"><ShieldAlert size={20}/></div>
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-rose-500/10 rounded-2xl flex items-center justify-center text-rose-500 border border-rose-500/20"><ShieldAlert size={24}/></div>
                       <div>
-                        <div className="text-sm font-black uppercase italic">{t.crisisNotif}</div>
-                        <div className="text-[10px] text-slate-500 uppercase font-bold">{t.alertOwner}</div>
+                        <div className="text-sm font-black uppercase italic tracking-tighter">{t.crisisNotif}</div>
+                        <div className="text-[10px] text-slate-600 uppercase font-bold">{t.alertOwner}</div>
                       </div>
                     </div>
-                    <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-14 h-8 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-500' : 'bg-slate-800'}`}>
-                      <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${notifyNegative ? 'right-1' : 'left-1'}`} />
+                    <button onClick={() => setNotifyNegative(!notifyNegative)} className={`w-16 h-9 rounded-full relative transition-all ${notifyNegative ? 'bg-indigo-600' : 'bg-slate-800'}`}>
+                      <div className={`absolute top-1.5 w-6 h-6 bg-white rounded-full transition-all ${notifyNegative ? 'right-1.5' : 'left-1.5'}`} />
                     </button>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.aiTone}</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {['friendly', 'professional', 'minimalist'].map((tone) => (
-                      <button key={tone} onClick={() => setAiTone(tone)} className={`py-3 rounded-xl text-[10px] font-black uppercase border transition-all ${aiTone === tone ? 'bg-white text-slate-950' : 'text-slate-500 border-white/10'}`}>{tone}</button>
-                    ))}
                   </div>
                 </div>
               </div>
             )}
 
             {activeTab === 'growth' && (
-              <div className="space-y-8 animate-in fade-in duration-500">
-                <div className="bg-slate-950 border border-white/5 p-8 rounded-[2.5rem] space-y-6">
+              <div className="space-y-10 animate-in fade-in duration-500">
+                <div className="bg-slate-950/50 p-8 rounded-[2.5rem] space-y-10 border border-white/5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase text-slate-400 italic">{t.automaticCoupon}</span>
-                    <button onClick={() => setAutoCoupon(!autoCoupon)} className={`w-14 h-8 rounded-full relative transition-all ${autoCoupon ? 'bg-indigo-500' : 'bg-slate-800'}`}>
-                      <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${autoCoupon ? 'right-1' : 'left-1'}`} />
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-cyan-500 border border-cyan-500/20"><Gift size={24}/></div>
+                      <span className="text-xs font-black uppercase tracking-tighter italic">{t.automaticCoupon}</span>
+                    </div>
+                    <button onClick={() => setAutoCoupon(!autoCoupon)} className={`w-16 h-9 rounded-full relative transition-all ${autoCoupon ? 'bg-indigo-600' : 'bg-slate-800'}`}>
+                      <div className={`absolute top-1.5 w-6 h-6 bg-white rounded-full transition-all ${autoCoupon ? 'right-1.5' : 'left-1.5'}`} />
                     </button>
                   </div>
-                  <div className="space-y-3">
+
+                  {/* NUEVO CAMPO DE CUPÓN */}
+                  {autoCoupon && (
+                    <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400">{t.couponDetail}</label>
+                      <textarea 
+                        value={promoText} 
+                        onChange={(e) => setPromoText(e.target.value)} 
+                        placeholder={t.couponPlaceholder}
+                        className="w-full bg-slate-900 border border-white/5 p-6 rounded-2xl text-sm font-bold outline-none focus:border-cyan-500 transition-all min-h-[100px]" 
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-4 pt-4 border-t border-white/5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.interceptorMode}</label>
-                    <select value={interceptorMode} onChange={(e) => setInterceptorMode(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold text-white outline-none">
+                    <select value={interceptorMode} onChange={(e) => setInterceptorMode(e.target.value)} className="w-full bg-slate-900 border border-white/5 p-5 rounded-2xl text-xs font-black uppercase italic text-white outline-none focus:border-indigo-500">
                       <option value="safe">{t.aggressiveDef}</option>
                       <option value="balanced">{t.balancedDef}</option>
                       <option value="minimal">{t.minimalDef}</option>
                     </select>
                   </div>
                 </div>
+
+                <button onClick={() => downloadQR(selectedBusiness)} className="w-full bg-gradient-to-r from-cyan-500 to-indigo-600 p-8 rounded-[2rem] flex items-center justify-between group hover:scale-[1.02] transition-all">
+                   <div className="flex items-center gap-6">
+                      <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-white"><QrCode size={32}/></div>
+                      <div className="text-left">
+                        <div className="text-xl font-black uppercase italic tracking-tighter text-white">{t.smartInterceptor}</div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Generate Physical QR Label</div>
+                      </div>
+                   </div>
+                   <ArrowRight className="text-white group-hover:translate-x-2 transition-transform" />
+                </button>
               </div>
             )}
           </div>
 
-          <div className="p-8 bg-slate-950/50 border-t border-white/5 flex items-center justify-between">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 italic">Ranko Engine v2.1</p>
-            <button onClick={saveSettings} disabled={isSaving} className="bg-indigo-500 hover:bg-indigo-400 text-slate-950 px-10 py-4 rounded-2xl font-black uppercase italic tracking-widest transition-all disabled:opacity-50 flex items-center gap-3">
-              {isSaving ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />}
+          <div className="p-10 bg-slate-950 border-t border-white/5 flex items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 italic">RANKO ENGINE v2.1 // GLOBAL DEFENSE</p>
+            <button onClick={saveSettings} disabled={isSaving} className="bg-white text-slate-950 px-12 py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:bg-cyan-400 hover:scale-105 disabled:opacity-50 flex items-center gap-3">
+              {isSaving ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={18} />}
               {isSaving ? t.saving : t.deployBtn}
             </button>
           </div>
