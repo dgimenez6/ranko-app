@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase/client';
+// Importamos Link de Next.js para una navegación rápida
+import Link from 'next/link';
 
 export default function LandingPage() {
   const { loginWithGoogle, logout } = useAuth();
@@ -49,7 +51,8 @@ export default function LandingPage() {
       couponPlaceholder: 'Ej: Un café de cortesía, 10% OFF...',
       interceptorLabel: 'MODO INTERCEPTOR (< 5★)',
       modeSafe: 'MODO SEGURO (WhatsApp)', modeSmart: 'MODO INTELIGENTE (AI)',
-      deployBtn: 'GUARDAR CAMBIOS', saving: 'GUARDANDO...'
+      deployBtn: 'GUARDAR CAMBIOS', saving: 'GUARDANDO...',
+      terms: 'Términos de Servicio', privacy: 'Política de Privacidad'
     },
     pt: {
       heroTitle: 'BLIND YOUR REPUTATION',
@@ -61,14 +64,15 @@ export default function LandingPage() {
       selectBiz: 'SEUS NEGÓCIOS', growthTools: 'CRESCIMENTO',
       smartInterceptor: 'SMART QR INTERCEPTOR', downloadQr: 'BAIXAR QR',
       langMode: 'IDIOMA DE RESPOSTA', waNotifications: 'NOTIFICAÇÕES WHATSAPP',
-      brainLabel: 'CÉREBRO DA IA', brainPlaceholder: 'Dados do seu negocio para a IA...',
+      brainLabel: 'CÉREBRO DA IA', brainPlaceholder: 'Dados do seu negócio para a IA...',
       autoReply5: 'Resposta Auto 5★', handsFree: '100% Automático',
       crisisNotif: 'Notificação de Crise', alertOwner: 'Alertar proprietário',
       automaticCoupon: 'Cupom de Presente', couponDetail: 'Detalhe do Benefício',
       couponPlaceholder: 'Ex: Um café cortesia, 10% OFF...',
       deployBtn: 'SALVAR ALTERAÇÕES', saving: 'SALVANDO...',
       interceptorLabel: 'MODO INTERCEPTOR (< 5★)',
-      modeSafe: 'MODO SEGURO (WhatsApp)', modeSmart: 'MODO INTELIGENTE (AI)'
+      modeSafe: 'MODO SEGURO (WhatsApp)', modeSmart: 'MODO INTELIGENTE (AI)',
+      terms: 'Termos de Serviço', privacy: 'Política de Privacidade'
     }
   };
 
@@ -162,12 +166,11 @@ export default function LandingPage() {
     </div>
   );
 
-  // LANDING PRINCIPAL CORREGIDA (Sin recortes)
+  // LANDING PRINCIPAL
   if (!user) return (
     <div className="min-h-screen bg-[#020617] text-white flex flex-col font-sans selection:bg-emerald-500/30">
       <nav className="max-w-7xl mx-auto w-full px-6 py-8 flex flex-col sm:flex-row justify-between items-center gap-6">
         <div className="flex items-center justify-center min-w-fit">
-          {/* Ajuste de padding-right y display para evitar el recorte del degradado */}
           <span className="inline-block text-3xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">
             Ranko AI
           </span>
@@ -176,12 +179,8 @@ export default function LandingPage() {
       </nav>
 
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 max-w-5xl mx-auto space-y-12 pb-20">
-        <h1 className="text-5xl md:text-9xl font-black italic tracking-tighter leading-[0.85] uppercase animate-in slide-in-from-bottom-8 duration-700">
-          {t.heroTitle}
-        </h1>
-        <p className="max-w-2xl text-slate-400 text-sm md:text-base leading-relaxed uppercase tracking-widest font-medium opacity-80">
-          {t.heroSub}
-        </p>
+        <h1 className="text-5xl md:text-9xl font-black italic tracking-tighter leading-[0.85] uppercase animate-in slide-in-from-bottom-8 duration-700">{t.heroTitle}</h1>
+        <p className="max-w-2xl text-slate-400 text-sm md:text-base leading-relaxed uppercase tracking-widest font-medium opacity-80">{t.heroSub}</p>
         <button onClick={loginWithGoogle} className="group relative bg-emerald-600 hover:bg-emerald-500 text-white px-12 py-6 rounded-2xl font-black uppercase italic tracking-widest transition-all shadow-[0_0_40px_rgba(16,185,129,0.2)] flex items-center gap-4 active:scale-95">
           {t.getStarted} <ArrowRight className="group-hover:translate-x-2 transition-transform" />
         </button>
@@ -200,8 +199,9 @@ export default function LandingPage() {
           <div className="space-y-6">
             <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Legal</h4>
             <div className="flex flex-col gap-3">
-              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">Terms</a>
-              <a href="#" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">Privacy</a>
+              {/* Apuntamos a las rutas físicas que ya existen en tu carpeta app */}
+              <Link href="/terms" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">{t.terms}</Link>
+              <Link href="/privacy" className="text-[11px] font-bold text-slate-500 hover:text-white transition-colors uppercase italic">{t.privacy}</Link>
             </div>
           </div>
         </div>
@@ -209,23 +209,18 @@ export default function LandingPage() {
     </div>
   );
 
-  // DASHBOARD
   return (
     <main className="min-h-screen bg-slate-950 text-white font-sans overflow-x-hidden selection:bg-emerald-500/30">
       <nav className="border-b border-white/5 bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4 min-w-0">
             <div className="bg-gradient-to-br from-indigo-600 to-emerald-500 p-2 rounded-xl flex-shrink-0"><Zap className="text-white fill-white" size={18} /></div>
-            {/* Logo Dashboard con el mismo ajuste de espacio */}
-            <span className="inline-block text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">
-              Ranko AI
-            </span>
+            <span className="inline-block text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</span>
           </div>
           <button onClick={() => logout()} className="text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/10 transition-all flex-shrink-0">Logout</button>
         </div>
       </nav>
 
-      {/* Stats Section */}
       <div className="max-w-7xl mx-auto px-6 py-10">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
           {[
