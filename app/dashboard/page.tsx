@@ -3,10 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { 
   ShieldCheck, MessageSquare, Zap, Star, Loader2, 
-  Clock, QrCode, LayoutDashboard, Heart, 
-  ShieldAlert, Gift, CheckCircle, BarChart3, Languages,
-  TrendingUp, AlertTriangle, Lightbulb, Download, ExternalLink,
-  Users, Code, Send, ChevronRight, Copy, Check, Play
+  Clock, LayoutDashboard, Heart, 
+  ShieldAlert, Gift, CheckCircle, BarChart3, 
+  Lightbulb, Download, ExternalLink,
+  Users, Code, Send, Copy, Check, Play, X, Eye
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase/client';
@@ -17,10 +17,14 @@ export default function DashboardPage() {
   const [myBusinesses, setMyBusinesses] = useState<any[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false); // Nuevo para el backlog
+  const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'strategy' | 'growth' | 'staff'>('overview');
   const [viewMode, setViewMode] = useState<'single' | 'global'>('single');
   const [copied, setCopied] = useState(false);
+
+  // ESTADOS PARA MODAL DE PREVIEW
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<any[]>([]);
 
   // ESTADOS DE NEGOCIO
   const [bizInfo, setBizInfo] = useState('');
@@ -61,9 +65,10 @@ export default function DashboardPage() {
       emptyInsights: 'Esperando datos de reseñas...',
       staffSectionTitle: 'Gestión de Equipo',
       backlogTitle: 'Backlog Intelligence',
-      backlogDesc: 'Respondé automáticamente todas las reseñas antiguas pendientes.',
-      backlogBtn: 'Responder Backlog con IA',
-      backlogSuccess: 'Limpieza de historial iniciada'
+      backlogDesc: 'Reseñas pendientes detectadas.',
+      backlogBtn: 'Analizar Historial',
+      backlogConfirm: 'Confirmar y Publicar Todo',
+      backlogModalTitle: 'Pre-visualización de Respuestas'
     },
     pt: {
       overview: 'Resumo', strategy: 'Defesa', growth: 'Marketing', staff: 'Equipe',
@@ -86,9 +91,10 @@ export default function DashboardPage() {
       emptyInsights: 'Aguardando dados...',
       staffSectionTitle: 'Gestão de Equipe',
       backlogTitle: 'Backlog Intelligence',
-      backlogDesc: 'Responda automaticamente todas as avaliações antigas pendentes.',
-      backlogBtn: 'Responder Backlog com IA',
-      backlogSuccess: 'Limpeza de histórico iniciada'
+      backlogDesc: 'Avaliações pendentes detectadas.',
+      backlogBtn: 'Analisar Histórico',
+      backlogConfirm: 'Confirmar e Publicar Tudo',
+      backlogModalTitle: 'Pré-visualização de Respostas'
     }
   };
 
@@ -99,7 +105,7 @@ export default function DashboardPage() {
   }, [authUser, viewMode, selectedBusiness?.id]);
 
   const fetchData = async (currentUser: any) => {
-    const { data: businesses } = await supabase.from('businesses').select('*, whatsapp_configs(phone_number)').eq( 'user_id', currentUser.id);
+    const { data: businesses } = await supabase.from('businesses').select('*, whatsapp_configs(phone_number)').eq('user_id', currentUser.id);
     if (businesses && businesses.length > 0) {
       setMyBusinesses(businesses);
       const biz = selectedBusiness || businesses[0];
@@ -175,25 +181,45 @@ export default function DashboardPage() {
         auto_reply_5_stars: autoReply5, interceptor_mode: interceptorMode,
         notify_negative_reviews: notifyNegative
       }).eq('id', selectedBusiness.id);
-      await supabase.from('whatsapp_configs').upsert({ business_id: selectedBusiness.id, phone_number: whatsappNumber.replace(/\D/g, '') }, { onConflict: 'business_id' });
-      alert(replyLang === 'es' ? "Guardado" : "Salvo");
+      await supabase.from('whatsapp_configs').upsert({ 
+        business_id: selectedBusiness.id, 
+        phone_number: whatsappNumber.replace(/\D/g, '') 
+      }, { onConflict: 'business_id' });
+      alert(replyLang === 'es' ? "Guardado con éxito" : "Salvo com sucesso");
     } catch (e) { console.error(e); } finally { setIsSaving(false); }
   };
 
-  // NUEVA FUNCIÓN PARA EL BACKLOG
-  const handleBacklogSync = async () => {
+  // LOGICA DE BACKLOG CON PREVIEW
+  const handleBacklogPreview = async () => {
     if (!selectedBusiness) return;
     setIsSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('sync-history', {
-        body: { business_id: selectedBusiness.id }
+        body: { business_id: selectedBusiness.id, preview_only: true }
       });
       if (error) throw error;
-      alert(cur.backlogSuccess);
+      setPreviewData(data?.pending_reviews || []);
+      setShowPreview(true);
+    } catch (e) {
+      console.error(e);
+      alert("Error analizando historial");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const confirmBacklogSync = async () => {
+    setIsSyncing(true);
+    try {
+      const { error } = await supabase.functions.invoke('sync-history', {
+        body: { business_id: selectedBusiness.id, execute: true }
+      });
+      if (error) throw error;
+      setShowPreview(false);
+      alert(replyLang === 'es' ? "Proceso de respuesta iniciado" : "Processo de resposta iniciado");
       fetchData(authUser);
     } catch (e) {
       console.error(e);
-      alert("Error sincronizando");
     } finally {
       setIsSyncing(false);
     }
@@ -210,6 +236,48 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
+      {/* MODAL DE PREVIEW */}
+      {showPreview && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 w-full max-w-2xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-black/20">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-500/20 p-2 rounded-lg text-emerald-400"><Eye size={18}/></div>
+                <h3 className="text-[12px] font-black uppercase italic">{cur.backlogModalTitle}</h3>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="text-slate-500 hover:text-white"><X size={20}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+              {previewData.length === 0 ? (
+                <div className="text-center py-10 text-slate-500 text-[10px] uppercase font-black italic">No hay reseñas pendientes para este local.</div>
+              ) : previewData.map((rev, i) => (
+                <div key={i} className="bg-black/40 border border-white/5 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] font-black text-slate-400 uppercase italic tracking-tighter">Reseña de {rev.reviewer_name}</span>
+                    <div className="flex text-amber-400"><Star size={10} fill="currentColor"/> <span className="text-[10px] ml-1 font-bold">{rev.stars}</span></div>
+                  </div>
+                  <p className="text-[11px] text-slate-300 italic">"{rev.comment || 'Sin comentario'}"</p>
+                  <div className="bg-emerald-500/5 border-l-2 border-emerald-500 p-3 rounded-r-xl">
+                    <span className="text-[9px] font-black text-emerald-500 uppercase block mb-1">Respuesta sugerida:</span>
+                    <p className="text-[11px] text-slate-200 leading-relaxed">{rev.suggested_reply}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-6 bg-black/40 border-t border-white/5">
+              <button 
+                onClick={confirmBacklogSync}
+                disabled={isSyncing || previewData.length === 0}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black uppercase italic text-[11px] flex items-center justify-center gap-2 transition-all shadow-xl disabled:opacity-50"
+              >
+                {isSyncing ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle size={16}/>}
+                {cur.backlogConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="border-b border-white/5 bg-black/50 backdrop-blur-md sticky top-0 z-50 px-6 py-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
@@ -222,10 +290,11 @@ export default function DashboardPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-10">
         <div className="flex flex-wrap gap-4 mb-8">
-          <button onClick={() => setViewMode('single')} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${viewMode === 'single' ? 'bg-indigo-600' : 'bg-slate-900 text-slate-500'}`}>{cur.singleView}</button>
-          <button onClick={() => setViewMode('global')} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${viewMode === 'global' ? 'bg-emerald-600' : 'bg-slate-900 text-slate-500'}`}><BarChart3 size={14}/> {cur.globalView}</button>
+          <button onClick={() => setViewMode('single')} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${viewMode === 'single' ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-slate-900 text-slate-500'}`}>{cur.singleView}</button>
+          <button onClick={() => setViewMode('global')} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${viewMode === 'global' ? 'bg-emerald-600 shadow-lg shadow-emerald-600/20' : 'bg-slate-900 text-slate-500'}`}><BarChart3 size={14}/> {cur.globalView}</button>
         </div>
 
+        {/* STATS GRID */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
           {[
             { label: cur.replies, val: stats.totalReplies, icon: MessageSquare, color: 'text-indigo-400' },
@@ -233,7 +302,7 @@ export default function DashboardPage() {
             { label: cur.happiness, val: `${stats.happiness}%`, icon: Heart, color: 'text-rose-400' },
             { label: cur.saved, val: stats.timeSaved, icon: Clock, color: 'text-emerald-400' }
           ].map((s, i) => (
-            <div key={i} className="bg-slate-900/40 border border-white/5 p-6 rounded-[2rem] shadow-inner">
+            <div key={i} className="bg-slate-900/40 border border-white/5 p-6 rounded-[2rem] shadow-inner backdrop-blur-sm">
               <s.icon className={`${s.color} mb-3`} size={20} />
               <div className="text-3xl font-black italic tracking-tighter">{s.val}</div>
               <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{s.label}</div>
@@ -242,12 +311,13 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* SIDEBAR */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-slate-900/60 border border-white/5 p-6 rounded-[2.5rem]">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6 flex items-center gap-2"><LayoutDashboard size={14}/> {cur.businesses}</h3>
               <div className="space-y-2">
                 {myBusinesses.map((b) => (
-                  <button key={b.id} onClick={() => { setSelectedBusiness(b); applyBusinessData(b); setViewMode('single'); }} className={`w-full text-left p-4 rounded-2xl border transition-all ${selectedBusiness?.id === b.id && viewMode === 'single' ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl' : 'bg-slate-950/50 border-white/5 text-slate-500 hover:border-white/20'}`}>
+                  <button key={b.id} onClick={() => { setSelectedBusiness(b); applyBusinessData(b); setViewMode('single'); }} className={`w-full text-left p-4 rounded-2xl border transition-all ${selectedBusiness?.id === b.id && viewMode === 'single' ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl scale-[1.02]' : 'bg-slate-950/50 border-white/5 text-slate-500 hover:border-white/20'}`}>
                     <span className="text-[11px] font-black uppercase italic truncate block">{b.business_name}</span>
                   </button>
                 ))}
@@ -288,6 +358,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* MAIN CONTENT AREA */}
           <div className="lg:col-span-8 bg-slate-900 border border-white/5 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
             <div className="p-2 flex bg-black/40 gap-2 border-b border-white/5 overflow-x-auto no-scrollbar">
               {[
@@ -302,45 +373,49 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            <div className="p-8 flex-1 overflow-y-auto max-h-[700px] custom-scrollbar">
+            <div className="p-6 flex-1 overflow-y-auto max-h-[700px] custom-scrollbar">
               {activeTab === 'overview' && (
-                <div className="space-y-8">
-                  {/* SECCIÓN NUEVA: BACKLOG INTELLIGENCE */}
-                  <div className="bg-gradient-to-r from-indigo-500/10 to-emerald-500/5 p-8 rounded-[2rem] border border-emerald-500/10 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-xl">
-                    <div className="flex items-center gap-5">
-                      <div className="bg-emerald-500/20 p-4 rounded-2xl ring-1 ring-emerald-500/30">
-                        <Clock className="text-emerald-400" size={28}/>
+                <div className="space-y-6">
+                  {/* COMPACT BACKLOG BANNER (Sin Scroll Lateral) */}
+                  <div className="bg-gradient-to-r from-indigo-500/10 to-emerald-500/10 p-5 rounded-[2rem] border border-emerald-500/20 flex flex-col sm:flex-row items-center gap-4 justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-emerald-500/20 p-3 rounded-xl ring-1 ring-emerald-500/30">
+                        <Clock className="text-emerald-400" size={20}/>
                       </div>
-                      <div className="text-left">
-                        <div className="text-[13px] font-black uppercase italic tracking-tight text-white mb-1">{cur.backlogTitle}</div>
-                        <div className="text-[10px] text-slate-400 uppercase leading-tight max-w-[300px]">{cur.backlogDesc}</div>
+                      <div>
+                        <div className="text-[11px] font-black uppercase italic text-white tracking-tight leading-none mb-1">{cur.backlogTitle}</div>
+                        <div className="text-[9px] text-slate-400 uppercase font-bold tracking-tighter leading-none">{cur.backlogDesc}</div>
                       </div>
                     </div>
                     <button 
-                      onClick={handleBacklogSync} 
+                      onClick={handleBacklogPreview} 
                       disabled={isSyncing} 
-                      className="w-full sm:w-auto bg-white text-black px-8 py-4 rounded-2xl font-black uppercase italic text-[11px] flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                      className="w-full sm:w-auto bg-white text-black px-6 py-3 rounded-xl font-black uppercase italic text-[10px] flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all active:scale-95 disabled:opacity-50"
                     >
-                      {isSyncing ? <Loader2 className="animate-spin" size={16}/> : <Play size={16} fill="black"/>}
+                      {isSyncing ? <Loader2 className="animate-spin" size={14}/> : <Play size={14} fill="black"/>}
                       {cur.backlogBtn}
                     </button>
                   </div>
 
-                  <div className="bg-emerald-500/5 p-6 rounded-2xl border border-emerald-500/10 flex items-center justify-between">
+                  {/* WEEKLY REPORT ROW */}
+                  <div className="bg-emerald-500/5 p-5 rounded-2xl border border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="bg-emerald-500/20 p-3 rounded-full"><Send className="text-emerald-500" size={20}/></div>
-                      <div className="text-left"><div className="text-[11px] font-black uppercase italic">{cur.reportTitle}</div><div className="text-[9px] text-slate-500 uppercase">{cur.reportDesc}</div></div>
+                      <div className="bg-emerald-500/20 p-2.5 rounded-full"><Send className="text-emerald-500" size={16}/></div>
+                      <div className="text-left"><div className="text-[10px] font-black uppercase italic">{cur.reportTitle}</div><div className="text-[8px] text-slate-500 uppercase tracking-tighter">{cur.reportDesc}</div></div>
                     </div>
-                    <div className="w-12 h-7 bg-emerald-600 rounded-full flex items-center justify-end px-1 cursor-not-allowed"><div className="w-5 h-5 bg-white rounded-full shadow-lg"/></div>
+                    <div className="w-10 h-6 bg-emerald-600 rounded-full flex items-center justify-end px-0.5 cursor-not-allowed opacity-50"><div className="w-4 h-4 bg-white rounded-full shadow-lg"/></div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.alerts}</label><input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-emerald-500" /></div>
-                    <div className="y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.lang}</label><select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none"><option value="es">Español</option><option value="pt">Português</option></select></div>
+                    <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.lang}</label><select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none"><option value="es">Español</option><option value="pt">Português</option></select></div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.tone}</label><select value={replyTone} onChange={(e) => setReplyTone(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none"><option value="friendly">{cur.toneFriendly}</option><option value="professional">{cur.toneProfessional}</option></select></div>
                     <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">Google Location ID</label><div className="flex gap-2"><input type="text" disabled value={selectedBusiness?.google_location_id || ''} className="flex-1 bg-slate-950/50 border border-white/5 p-4 rounded-xl text-[10px] font-mono text-slate-500" /><div className="bg-white/5 p-4 rounded-xl text-slate-400"><ExternalLink size={14}/></div></div></div>
                   </div>
+
                   <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.brain}</label><textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder={cur.placeholderBrain} className="w-full bg-slate-950 border border-white/5 p-5 rounded-2xl text-xs min-h-[140px] outline-none focus:border-emerald-500 transition-all" /></div>
                 </div>
               )}
@@ -369,17 +444,15 @@ export default function DashboardPage() {
                       <div className="bg-gradient-to-br from-slate-900 to-black border border-white/10 p-6 rounded-[2rem] shadow-2xl"><span className="text-[8px] font-black uppercase tracking-widest text-indigo-400 block mb-3">{cur.clientView}</span><h4 className="text-xl font-black italic uppercase mb-1">{promoText || '...'}</h4><p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Valid in {selectedBusiness?.business_name}</p></div>
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-slate-900/60 p-6 rounded-[2rem] border border-white/5 flex flex-col items-center text-center gap-4 shadow-xl">
                       <div className="bg-white p-3 rounded-xl shadow-lg"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent("https://rankoai.com/review/" + selectedBusiness?.id)}`} alt="QR" className="w-24 h-24" /></div>
                       <div>
                         <h4 className="text-[11px] font-black uppercase italic mb-1">{cur.kit}</h4>
                         <p className="text-[9px] text-slate-500 uppercase tracking-tighter mb-4">{cur.kitDesc}</p>
-                        <button className="bg-white text-black px-6 py-2.5 rounded-xl text-[9px] font-black uppercase flex items-center gap-2 mx-auto"><Download size={12}/> {cur.downloadQr}</button>
+                        <button className="bg-white text-black px-6 py-2.5 rounded-xl text-[9px] font-black uppercase flex items-center gap-2 mx-auto transition-transform active:scale-95"><Download size={12}/> {cur.downloadQr}</button>
                       </div>
                     </div>
-
                     <div className="bg-indigo-500/5 p-6 rounded-[2rem] border border-indigo-500/10 flex flex-col gap-4">
                       <div className="flex items-center gap-3"><Code className="text-indigo-400" size={18}/><div><div className="text-[11px] font-black uppercase italic">{cur.widgetTitle}</div><div className="text-[9px] text-slate-500 uppercase">{cur.widgetDesc}</div></div></div>
                       <div className="bg-black/60 p-4 rounded-xl font-mono text-[9px] text-indigo-300 border border-white/5 relative group h-full">
@@ -407,9 +480,14 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* BOTTOM BAR CON BOTÓN DE GUARDAR */}
             <div className="p-6 bg-black border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-6">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic">RANKO ENGINE v4.2 // READY</span>
-              <button onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto bg-emerald-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:bg-emerald-500 shadow-xl shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-3">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic">RANKO ENGINE v4.3 // DEPLOYED</span>
+              <button 
+                onClick={handleSave} 
+                disabled={isSaving} 
+                className="w-full sm:w-auto bg-emerald-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:bg-emerald-500 shadow-xl shadow-emerald-600/20 disabled:opacity-50 flex items-center justify-center gap-3 active:scale-95"
+              >
                 {isSaving ? <Loader2 className="animate-spin" size={18} /> : <ShieldCheck size={20} />}
                 {isSaving ? cur.saving : cur.saveBtn}
               </button>
