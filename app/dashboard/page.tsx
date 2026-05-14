@@ -6,7 +6,7 @@ import {
   Clock, QrCode, LayoutDashboard, Heart, 
   ShieldAlert, Gift, CheckCircle, BarChart3, Languages,
   TrendingUp, AlertTriangle, Lightbulb, Download, ExternalLink,
-  Users, Code, Send, ChevronRight, Copy, Check
+  Users, Code, Send, ChevronRight, Copy, Check, Play
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase/client';
@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [myBusinesses, setMyBusinesses] = useState<any[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false); // Nuevo para el backlog
   const [activeTab, setActiveTab] = useState<'overview' | 'strategy' | 'growth' | 'staff'>('overview');
   const [viewMode, setViewMode] = useState<'single' | 'global'>('single');
   const [copied, setCopied] = useState(false);
@@ -58,7 +59,11 @@ export default function DashboardPage() {
       reportTitle: 'Reporte Semanal WhatsApp', reportDesc: 'Resumen todos los lunes.',
       staffPlaceholder: 'Nombres del equipo (separados por coma)...',
       emptyInsights: 'Esperando datos de reseñas...',
-      staffSectionTitle: 'Gestión de Equipo'
+      staffSectionTitle: 'Gestión de Equipo',
+      backlogTitle: 'Backlog Intelligence',
+      backlogDesc: 'Respondé automáticamente todas las reseñas antiguas pendientes.',
+      backlogBtn: 'Responder Backlog con IA',
+      backlogSuccess: 'Limpieza de historial iniciada'
     },
     pt: {
       overview: 'Resumo', strategy: 'Defesa', growth: 'Marketing', staff: 'Equipe',
@@ -79,7 +84,11 @@ export default function DashboardPage() {
       reportTitle: 'Relatório Semanal WhatsApp', reportDesc: 'Resumo toda segunda-feira.',
       staffPlaceholder: 'Nomes da equipe (separados por vírgula)...',
       emptyInsights: 'Aguardando dados...',
-      staffSectionTitle: 'Gestão de Equipe'
+      staffSectionTitle: 'Gestão de Equipe',
+      backlogTitle: 'Backlog Intelligence',
+      backlogDesc: 'Responda automaticamente todas as avaliações antigas pendentes.',
+      backlogBtn: 'Responder Backlog com IA',
+      backlogSuccess: 'Limpeza de histórico iniciada'
     }
   };
 
@@ -171,6 +180,25 @@ export default function DashboardPage() {
     } catch (e) { console.error(e); } finally { setIsSaving(false); }
   };
 
+  // NUEVA FUNCIÓN PARA EL BACKLOG
+  const handleBacklogSync = async () => {
+    if (!selectedBusiness) return;
+    setIsSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-history', {
+        body: { business_id: selectedBusiness.id }
+      });
+      if (error) throw error;
+      alert(cur.backlogSuccess);
+      fetchData(authUser);
+    } catch (e) {
+      console.error(e);
+      alert("Error sincronizando");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const copyWidgetCode = () => {
     const code = `<iframe src="https://rankoai.com/widget/${selectedBusiness?.id}" width="100%" height="400" frameborder="0"></iframe>`;
     navigator.clipboard.writeText(code);
@@ -186,10 +214,7 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="bg-gradient-to-br from-indigo-600 to-emerald-500 p-2 rounded-xl"><Zap className="text-white fill-white" size={18} /></div>
-            {/* AJUSTE 1: LOGO SIN CORTES */}
-            <span className="text-2xl font-black italic uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-4">
-              Ranko AI
-            </span>
+            <span className="text-2xl font-black italic uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-4">Ranko AI</span>
           </div>
           <button onClick={logout} className="text-[10px] font-black uppercase text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl">Logout</button>
         </div>
@@ -264,7 +289,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="lg:col-span-8 bg-slate-900 border border-white/5 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
-            {/* AJUSTE 2: TABS CON BORDES VISIBLES Y SCROLL MÓVIL */}
             <div className="p-2 flex bg-black/40 gap-2 border-b border-white/5 overflow-x-auto no-scrollbar">
               {[
                 { id: 'overview', label: cur.overview, icon: LayoutDashboard },
@@ -272,11 +296,7 @@ export default function DashboardPage() {
                 { id: 'growth', label: cur.growth, icon: Zap },
                 { id: 'staff', label: cur.staff, icon: Users }
               ].map((tab) => (
-                <button 
-                  key={tab.id} 
-                  onClick={() => setActiveTab(tab.id as any)} 
-                  className={`min-w-fit flex-1 py-4 px-6 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase transition-all ${activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
-                >
+                <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`min-w-fit flex-1 py-4 px-6 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase transition-all ${activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>
                   <tab.icon size={14}/> {tab.label}
                 </button>
               ))}
@@ -285,6 +305,27 @@ export default function DashboardPage() {
             <div className="p-8 flex-1 overflow-y-auto max-h-[700px] custom-scrollbar">
               {activeTab === 'overview' && (
                 <div className="space-y-8">
+                  {/* SECCIÓN NUEVA: BACKLOG INTELLIGENCE */}
+                  <div className="bg-gradient-to-r from-indigo-500/10 to-emerald-500/5 p-8 rounded-[2rem] border border-emerald-500/10 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-xl">
+                    <div className="flex items-center gap-5">
+                      <div className="bg-emerald-500/20 p-4 rounded-2xl ring-1 ring-emerald-500/30">
+                        <Clock className="text-emerald-400" size={28}/>
+                      </div>
+                      <div className="text-left">
+                        <div className="text-[13px] font-black uppercase italic tracking-tight text-white mb-1">{cur.backlogTitle}</div>
+                        <div className="text-[10px] text-slate-400 uppercase leading-tight max-w-[300px]">{cur.backlogDesc}</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={handleBacklogSync} 
+                      disabled={isSyncing} 
+                      className="w-full sm:w-auto bg-white text-black px-8 py-4 rounded-2xl font-black uppercase italic text-[11px] flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                    >
+                      {isSyncing ? <Loader2 className="animate-spin" size={16}/> : <Play size={16} fill="black"/>}
+                      {cur.backlogBtn}
+                    </button>
+                  </div>
+
                   <div className="bg-emerald-500/5 p-6 rounded-2xl border border-emerald-500/10 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="bg-emerald-500/20 p-3 rounded-full"><Send className="text-emerald-500" size={20}/></div>
@@ -294,7 +335,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.alerts}</label><input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-emerald-500" /></div>
-                    <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.lang}</label><select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none"><option value="es">Español</option><option value="pt">Português</option></select></div>
+                    <div className="y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.lang}</label><select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none"><option value="es">Español</option><option value="pt">Português</option></select></div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-3"><label className="text-[10px] font-black uppercase text-slate-500">{cur.tone}</label><select value={replyTone} onChange={(e) => setReplyTone(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none"><option value="friendly">{cur.toneFriendly}</option><option value="professional">{cur.toneProfessional}</option></select></div>
