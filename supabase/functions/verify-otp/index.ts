@@ -40,8 +40,7 @@ serve(async (req) => {
       });
     }
 
-    // 3. Ejecución Atómica de Alta
-    // Usamos Promise.all para que sea rápido
+    // 3. Ejecución Atómica de Alta (Multitarea rápida)
     const results = await Promise.all([
       // A. Quemamos el código y marcamos sesión verificada
       supabase
@@ -69,17 +68,17 @@ serve(async (req) => {
         .update({ 
           is_active: true,
           connection_status: 'connected',
-          whatsapp_number: cleanPhone // Guardamos respaldo para alertas
+          whatsapp_number: cleanPhone 
         })
         .eq('id', business_id)
     ]);
 
-    // Chequeamos errores en las promesas
     if (results.some(r => r.error)) {
       throw new Error("Error guardando la configuración final.");
     }
 
     // 4. Disparar Bienvenida (Background task)
+    // Usamos el Service Role para asegurar que la función de bienvenida tenga permisos
     const welcomeUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/welcome-message`;
     fetch(welcomeUrl, {
       method: 'POST',

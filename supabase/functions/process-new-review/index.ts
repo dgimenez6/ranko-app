@@ -9,130 +9,90 @@ serve(async (req) => {
 
   try {
     const payload = await req.json();
-    // Soporta disparos manuales o por Webhook de base de datos
     const review_id = payload.record?.id || payload.review_id;
-    
     if (!review_id) throw new Error("ID de reseña no proporcionado");
 
-    // 1. Obtener reseña y configuración (JOIN con whatsapp_configs para el teléfono)
+    // 1. Obtener datos con JOIN para tener todo el contexto
     const { data: review, error: revError } = await supabase
       .from('reviews')
-      .select(`
-        *,
-        businesses (
-          *,
-          whatsapp_configs (phone_number)
-        )
-      `)
+      .select(`*, businesses (*, whatsapp_configs (phone_number))`)
       .eq('id', review_id)
       .single();
 
-    if (revError || !review) throw new Error("Reseña o configuración de negocio no encontrada");
+    if (revError || !review) throw new Error("Reseña o negocio no encontrado");
 
     const biz = review.businesses;
-    // Extraemos el teléfono desde la tabla relacionada whatsapp_configs
-    const ownerPhone = biz.whatsapp_configs?.[0]?.phone_number || biz.whatsapp_configs?.phone_number;
+    const ownerPhone = Array.isArray(biz.whatsapp_configs) ? biz.whatsapp_configs[0]?.phone_number : biz.whatsapp_configs?.phone_number;
     
-    if (!ownerPhone) {
-      console.log(`⚠️ Skip: No se encontró teléfono en whatsapp_configs para ${biz.business_name}`);
-      return new Response("No phone in whatsapp_configs", { status: 200 });
-    }
+    if (!ownerPhone) return new Response("No phone configured", { status: 200 });
 
     const lang = biz.language || 'es';
     const isPT = lang === 'pt';
-    const tone = biz.reply_tone || 'professional';
-    
-    // 2. IA con el "Cerebro" del negocio y regionalismos
-    const regionPrompt = biz.country_code === 'AR' 
-      ? "Respondé en Español de Argentina con voseo (usá 'vení', 'che', 'atendé')." 
-      : isPT ? "Responda em Português do Brasil de forma natural e amigável." : "Respondé en Español neutro.";
+    const staffList = biz.staff_names?.join(', ') || 'No especificado';
 
-    const systemPrompt = `Sos el asistente de atención al cliente de "${biz.business_name}". 
-      Instrucciones de región: ${regionPrompt}
-      Tono: ${tone}.
-      Info del negocio: ${biz.business_info || 'Comercio enfocado en excelente atención.'}
-      
-      Reglas de respuesta:
-      - Si es 4-5 estrellas: Agradecé cálidamente e incluí: ${biz.promo_text || 'Gracias por tu visita.'}
-      - Si es 1-3 estrellas: Mostrá empatía, pedí disculpas y pedí que se contacten por privado.
-      - Sé breve (máximo 2 párrafos). No inventes información que no esté en el contexto.`;
+    // 2. IA con Formato JSON para Tags e Inteligencia
+    const systemPrompt = `Sos el asistente de "${biz.business_name}".
+      TONO: ${biz.reply_tone || 'friendly'}.
+      CEREBRO: ${biz.business_info || 'Atención de calidad.'}
+      STAFF: ${staffList}.
 
-    let reply = "";
-    try {
-      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Rating: ${review.star_rating} estrellas. Comentario: "${review.comment_text || 'El cliente no dejó comentarios.'}"` }
-          ],
-          temperature: 0.7,
-          max_tokens: 250
-        }),
-      });
-      const aiData = await aiResponse.json();
-      if (aiData.error) throw new Error(aiData.error.message);
-      reply = aiData.choices[0].message.content.trim();
-    } catch (aiErr) {
-      console.error("Error OpenAI:", aiErr);
-      reply = isPT ? "Nova avaliação recebida! Verifique seu painel para responder." : "¡Nueva reseña recibida! Entra a tu panel para responder.";
-    }
+      TAREA: Respondé al cliente y analizá la reseña.
+      DEVOLVÉ UN JSON ESTRICTO:
+      {
+        "reply": "Texto de la respuesta (máx 2 párrafos)",
+        "analysis": [{ "topic": "Comida|Servicio|Limpieza|Precio|Ambiente", "sentiment": "pos|neg", "entity": "Nombre de staff si aparece" }]
+      }`;
 
-    // 3. Publicación automática en Google My Business (Solo 4-5 estrellas si está activo)
-    const isAutoReplyEnabled = (review.star_rating >= 4 && biz.auto_reply_5_stars);
-    let postedStatus = 'pending';
-
-    if (isAutoReplyEnabled && biz.google_access_token) {
-      try {
-        const googleRes = await fetch(`https://mybusiness.googleapis.com/v4/${review.review_name}/reply`, {
-          method: 'PUT',
-          headers: { 
-            'Authorization': `Bearer ${biz.google_access_token}`,
-            'Content-Type': 'application/json' 
-          },
-          body: JSON.stringify({ comment: reply })
-        });
-        
-        if (googleRes.ok) postedStatus = 'posted';
-      } catch (gErr) {
-        console.error("Error publicando en Google:", gErr);
-        postedStatus = 'error_posting';
-      }
-    }
-
-    // 4. Notificación vía WhatsApp (Evolution API)
-    const whatsappText = isAutoReplyEnabled
-      ? (isPT 
-          ? `✅ *Auto-Resposta:* Respondi no Google para *${biz.business_name}* (${review.star_rating}⭐):\n\n"${reply}"` 
-          : `✅ *Auto-Respuesta:* Respondí en Google por *${biz.business_name}* (${review.star_rating}⭐):\n\n"${reply}"`)
-      : (isPT 
-          ? `🔔 *Nova Avaliação (${review.star_rating}⭐):*\n"${review.comment_text || '-'}"\n\n*Sugestão de resposta:* \n"${reply}"` 
-          : `🔔 *Nueva Reseña (${review.star_rating}⭐):*\n"${review.comment_text || '-'}"\n\n*Sugerencia de respuesta:* \n"${reply}"`);
-
-    const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-main';
-    const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
-    
-    await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
+    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 'apikey': evoApiKey!, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ number: ownerPhone, text: whatsappText })
+      headers: { 'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Rating: ${review.star_rating}⭐. Comentario: "${review.comment_text || 'Sin texto'}"` }
+        ],
+        response_format: { type: "json_object" }
+      }),
     });
 
-    // 5. Registro final de la gestión
+    const aiData = await aiResponse.json();
+    const result = JSON.parse(aiData.choices[0].message.content);
+
+    // 3. Publicación en Google (4-5 estrellas)
+    let postedStatus = 'pending';
+    if (review.star_rating >= 4 && biz.auto_reply_5_stars && biz.google_access_token) {
+      const gRes = await fetch(`https://mybusiness.googleapis.com/v4/${review.review_name}/reply`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${biz.google_access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment: result.reply })
+      });
+      if (gRes.ok) postedStatus = 'posted';
+    }
+
+    // 4. Notificación WhatsApp
+    const message = (postedStatus === 'posted')
+      ? (isPT ? `✅ *Auto-Resposta:* Respondi no Google (${review.star_rating}⭐):\n\n"${result.reply}"` : `✅ *Auto-Respuesta:* Respondí en Google (${review.star_rating}⭐):\n\n"${result.reply}"`)
+      : (isPT ? `🔔 *Nova Avaliação (${review.star_rating}⭐):*\n"${review.comment_text || '-'}"\n\n*Sugestão:* "${result.reply}"` : `🔔 *Nueva Reseña (${review.star_rating}⭐):*\n"${review.comment_text || '-'}"\n\n*Sugerencia:* "${result.reply}"`);
+
+    await fetch(`${Deno.env.get('EVOLUTION_API_URL')}/message/sendText/${Deno.env.get('EVOLUTION_INSTANCE')}`, {
+      method: 'POST',
+      headers: { 'apikey': Deno.env.get('EVOLUTION_API_KEY')!, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: ownerPhone, text: message })
+    });
+
+    // 5. INSERT CLAVE: Guardamos los TAGS para el Dashboard
     await supabase.from("reviews_logs").insert({
       business_id: biz.id,
       stars: review.star_rating,
       review_text: review.comment_text,
-      reply_text: reply,
+      reply_text: result.reply,
+      tags: result.analysis, // <--- Esto es lo que pinta el Dashboard
       status: postedStatus
     });
 
-    return new Response("Process Completed", { status: 200 });
-
+    return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error("Error crítico en process-new-review:", err.message);
     return new Response(err.message, { status: 500 });
   }
 });

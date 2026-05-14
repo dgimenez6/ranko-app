@@ -17,7 +17,7 @@ serve(async (req) => {
   try {
     const { business_id } = await req.json();
 
-    // 1. Obtener datos con Join (Manejo correcto de arrays de Supabase)
+    // 1. Obtener datos con Join 
     const { data: biz, error: bizError } = await supabase
       .from('businesses')
       .select('*, whatsapp_configs(phone_number)')
@@ -26,19 +26,17 @@ serve(async (req) => {
 
     if (bizError || !biz) throw new Error("No se encontró el negocio.");
 
-    // Extraemos el teléfono manejando el array de la relación
     const configs = biz.whatsapp_configs;
     const phone = Array.isArray(configs) ? configs[0]?.phone_number : configs?.phone_number;
 
-    if (!phone) {
-      throw new Error("El negocio no tiene un teléfono vinculado en whatsapp_configs.");
-    }
+    if (!phone) throw new Error("El negocio no tiene un teléfono vinculado.");
 
     const isPT = biz.language === 'pt' || biz.country_code === 'BR'; 
     const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
     const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-main';
+    const evoUrl = Deno.env.get('EVOLUTION_API_URL') || "https://evolution-api-production-0695.up.railway.app";
 
-    if (!evoApiKey) throw new Error("Falta la configuración de EVOLUTION_API_KEY en el servidor.");
+    if (!evoApiKey) throw new Error("Falta EVOLUTION_API_KEY.");
 
     // 2. Mensajes bilingües con Personalidad Ranko
     const message = isPT
@@ -46,24 +44,15 @@ serve(async (req) => {
       : `¡Hola! Soy *Ranko*, tu nuevo asistente de hospitalidad para *${biz.business_name}*. 🚀\n\nYa estoy conectado a tu Google Business. A partir de ahora:\n✅ Voy a responder solo todas las reseñas positivas (4 y 5⭐).\n🚨 Si llega una crítica, te aviso por acá con una sugerencia para que decidamos juntos.\n\nEscribí */status* en cualquier momento para ver tu configuración. ¡Bienvenido a bordo!`;
 
     // 3. Envío profesional vía Evolution API
-    const evoResponse = await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
+    const evoResponse = await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
       method: 'POST',
-      headers: { 
-        'apikey': evoApiKey, 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({
-        number: phone,
-        text: message
-      })
+      headers: { 'apikey': evoApiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: phone, text: message })
     });
 
-    if (!evoResponse.ok) {
-      const errorText = await evoResponse.text();
-      throw new Error(`Error Evolution API: ${errorText}`);
-    }
+    if (!evoResponse.ok) throw new Error(`Error Evolution API`);
 
-    // 4. Marcamos éxito en los logs para métricas
+    // 4. Marcamos éxito en los logs
     await supabase.from('reviews_logs').insert({
       business_id: biz.id,
       status: 'welcome_sent',
@@ -76,7 +65,6 @@ serve(async (req) => {
     });
 
   } catch (err) {
-    console.error("Error en welcome-message:", err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500

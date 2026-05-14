@@ -1,152 +1,114 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const i18n: any = {
-  es: { 
-    pauso: "⏸️ Automatización pausada", 
-    activo: "▶️ Automatización activa", 
-    gestionando: "✅ Gestionando ahora:", 
-    listado: "Tenés varios locales. Elegí uno enviando el número:", 
-    bienvenida: "¡Hola! Soy *Ranko AI* 🤖. Desde acá controlás tus negocios.\n\n🚀 *Comandos:*\n/menu - Ver mis locales\n/status - Estado y Plan\n/pause - Pausar bot\n/resume - Activar bot",
-    error: "❌ Error procesando la solicitud.", 
-    ayuda: "💬 ¿En qué puedo ayudarte? Podés enviarme una reseña para que te ayude a responderla.",
-    estado: "Estado", plan: "Plan", prueba: "Prueba", premium: "Premium 💎", cerebro: "Cerebro IA"
-  },
-  pt: { 
-    pauso: "⏸️ Automação pausada", 
-    activo: "▶️ Automação ativa", 
-    gestionando: "✅ Gerenciando agora:", 
-    listado: "Você tem vários locais. Escolha um enviando o número:", 
-    bienvenida: "Olá! Sou o *Ranko AI* 🤖. Daqui você gerencia seus negócios.\n\n🚀 *Comandos:*\n/menu - Ver meus locais\n/status - Status e Plano\n/pause - Pausar bot\n/resume - Ativar bot",
-    error: "❌ Erro ao processar sua solicitação.", 
-    ayuda: "💬 Como posso ajudar? Você pode me enviar uma avaliação para eu te ajudar a responder.",
-    estado: "Status", plan: "Plano", prueba: "Teste", premium: "Premium 💎", cerebro: "Cérebro IA"
-  }
-};
-
 serve(async (req) => {
-  const url = new URL(req.url);
-  // 1. VALIDACIÓN DE SEGURIDAD
-  if (url.searchParams.get("api_key") !== Deno.env.get("WEBHOOK_SECRET")) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const payload = await req.json();
-  
-  // Ignorar mensajes propios o eventos que no sean mensajes nuevos
-  if (payload.event !== "messages.upsert" || payload.data.key.fromMe) return new Response("OK", { status: 200 });
-
-  const senderPhone = payload.data.key.remoteJid.split("@")[0];
-  const text = (payload.data.message.conversation || payload.data.message.extendedTextMessage?.text || "").trim();
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
 
   try {
-    // 2. BUSCAR CONFIGURACIÓN DEL DUEÑO
-    const { data: configs } = await supabase
-      .from("whatsapp_configs")
-      .select("business_id, businesses(*)")
-      .eq("phone_number", senderPhone);
+    const body = await req.json();
+    if (!body.message?.data) return new Response("No data", { status: 200 });
 
-    if (!configs || configs.length === 0) return new Response("OK", { status: 200 });
+    // 1. Decodificación de la notificación de Google (Pub/Sub)
+    const decodedData = atob(body.message.data);
+    const rawData = JSON.parse(decodedData);
+    const { locationName, reviewId } = rawData;
 
-    // 3. GESTIÓN DE SESIÓN ACTIVA
-    const { data: session } = await supabase.from("user_sessions").select("active_business_id").eq("phone", senderPhone).maybeSingle();
+    if (!locationName || !reviewId) {
+      console.log("Ping de prueba o notificación sin ID de reseña.");
+      return new Response("Not a review notification", { status: 200 });
+    }
     
-    // Si no hay sesión, inicializamos con el primer negocio
-    let activeId = session?.active_business_id;
-    if (!activeId) {
-      activeId = configs[0].business_id;
-      await supabase.from("user_sessions").upsert({ phone: senderPhone, active_business_id: activeId });
+    const reviewName = `${locationName}/reviews/${reviewId}`;
+
+    // 2. Buscamos el negocio vinculado a esa locación
+    const { data: biz, error: bizError } = await supabase
+      .from("businesses")
+      .select("id, google_refresh_token, google_access_token, last_sync_at, auto_reply_5_stars, notify_negative_reviews")
+      .eq("google_location_id", locationName) 
+      .maybeSingle();
+
+    if (!biz || bizError) {
+      console.error("Local no encontrado para:", locationName);
+      return new Response("Business not found", { status: 200 });
     }
 
-    const bizConfig = configs.find(c => c.business_id === activeId);
-    const biz = bizConfig?.businesses;
-    
-    if (!biz) return new Response("OK", { status: 200 });
+    // 3. Gestión de Tokens (Auto-Refresh)
+    let currentToken = biz.google_access_token;
+    const tokenAge = biz.last_sync_at ? (new Date().getTime() - new Date(biz.last_sync_at).getTime()) / 60000 : 999;
 
-    const lang = biz.language === 'pt' ? 'pt' : 'es';
-    const t = i18n[lang];
-
-    // --- LÓGICA DE COMANDOS ---
-    if (text === "/menu") {
-      const lista = configs.map((c: any, i: number) => {
-        const flag = c.businesses.country_code === 'BR' ? '🇧🇷' : '🇦🇷';
-        return `${i + 1}. ${flag} ${c.businesses.business_name}`;
-      }).join("\n");
-      await sendWhatsApp(senderPhone, `🏢 *${t.listado}*\n\n${lista}`);
-      return new Response("OK", { status: 200 });
-    }
-
-    // Selección de negocio por número (1, 2, 3...)
-    if (/^\d+$/.test(text) && text.length <= 2) {
-      const idx = parseInt(text) - 1;
-      if (configs[idx]) {
-        const newBiz = configs[idx].businesses;
-        await supabase.from("user_sessions").upsert({ phone: senderPhone, active_business_id: newBiz.id });
-        const newLang = newBiz.language === 'pt' ? 'pt' : 'es';
-        await sendWhatsApp(senderPhone, `${i18n[newLang].gestionando} *${newBiz.business_name}*`);
-        return new Response("OK", { status: 200 });
+    if (tokenAge > 50 || !currentToken) {
+      const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: Deno.env.get("GOOGLE_CLIENT_ID"),
+          client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET"),
+          refresh_token: biz.google_refresh_token,
+          grant_type: "refresh_token",
+        }),
+      });
+      const refreshData = await refreshRes.json();
+      if (refreshData.access_token) {
+        currentToken = refreshData.access_token;
+        await supabase.from("businesses").update({
+          google_access_token: currentToken,
+          last_sync_at: new Date().toISOString()
+        }).eq("id", biz.id);
       }
     }
 
-    if (text.startsWith("/")) {
-      if (text === "/pause") { 
-        await supabase.from("businesses").update({ is_active: false }).eq("id", biz.id); 
-        await sendWhatsApp(senderPhone, `${t.pauso} *${biz.business_name}*`); 
-      }
-      else if (text === "/resume") { 
-        await supabase.from("businesses").update({ is_active: true }).eq("id", biz.id); 
-        await sendWhatsApp(senderPhone, `${t.activo} *${biz.business_name}*`); 
-      }
-      else if (text === "/status") { 
-        const statusIcon = biz.is_active ? '✅ ON' : '⏸️ OFF';
-        const planInfo = biz.plan_status === 'trial' ? `${t.prueba} (${biz.credits_used}/5)` : t.premium;
-        const brainStatus = biz.business_info ? '🧠 ON' : '❌ OFF';
-        
-        const statusMsg = `⚙️ *RANKO STATUS*\n\n` +
-                         `🏢 Negocio: ${biz.business_name}\n` +
-                         `🚦 ${t.estado}: ${statusIcon}\n` +
-                         `💎 ${t.plan}: ${planInfo}\n` +
-                         `🧠 ${t.cerebro}: ${brainStatus}\n` +
-                         `🎭 Tono: ${biz.reply_tone}`;
-        await sendWhatsApp(senderPhone, statusMsg); 
-      }
-      return new Response("OK", { status: 200 });
-    }
+    // 4. Traemos la reseña real de Google API
+    const reviewRes = await fetch(`https://mybusiness.googleapis.com/v4/${reviewName}`, {
+      headers: { "Authorization": `Bearer ${currentToken}` }
+    });
+    const reviewData = await reviewRes.json();
 
-    // --- CONSULTA IA (Usando el "Cerebro" del negocio) ---
-    if (text.length > 5) {
-      // Llamamos a la función de generación con el SERVICE_ROLE_KEY interno
-      const aiResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-reply`, {
+    const starRatingMap: Record<string, number> = { "FIVE": 5, "FOUR": 4, "THREE": 3, "TWO": 2, "ONE": 1 };
+    const stars = starRatingMap[reviewData.starRating] || 0;
+
+    // 5. Upsert en la tabla 'reviews'
+    const { data: newReview, error: insError } = await supabase
+      .from("reviews")
+      .upsert({
+        business_id: biz.id,
+        google_review_id: reviewId,
+        star_rating: stars,
+        comment_text: reviewData.comment || "",
+        reviewer_name: reviewData.reviewer?.displayName || "Cliente",
+        review_name: reviewName,
+        created_at: new Date().toISOString()
+      }, { onConflict: 'google_review_id' })
+      .select().single();
+
+    if (insError) throw insError;
+
+    // 6. DISPARO DE PROCESAMIENTO E INTELIGENCIA
+    // Decidimos si procesar según la config del dueño
+    const isHighRating = stars >= 4;
+    const shouldProcess = isHighRating ? biz.auto_reply_5_stars : biz.notify_negative_reviews;
+
+    if (shouldProcess && newReview) {
+      // Llamamos a 'process-new-review' para que genere la respuesta Y los TAGS
+      fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/process-new-review`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` 
+          "Authorization": `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
         },
-        body: JSON.stringify({ business_id: biz.id, review_text: text, stars: 5 })
-      });
-
-      const aiResult = await aiResponse.json();
-      const msg = aiResult.status === "limit_reached" ? aiResult.reply : `🤖 *Ranko AI sugerencia:*\n\n${aiResult.reply}`;
-      await sendWhatsApp(senderPhone, msg);
-    } else {
-      await sendWhatsApp(senderPhone, t.ayuda);
+        body: JSON.stringify({ 
+          review_id: newReview.id,
+          stars: stars,
+          business_id: biz.id 
+        })
+      }).catch(e => console.error("Error en disparo asíncrono:", e));
     }
 
-  } catch (e) {
-    console.error("WhatsApp Webhook Error:", e);
-    await sendWhatsApp(senderPhone, i18n.es.error);
-  }
-  return new Response("OK", { status: 200 });
-});
+    return new Response("OK", { status: 200 });
 
-async function sendWhatsApp(number: string, text: string) {
-  const instance = Deno.env.get("EVOLUTION_INSTANCE") || "ranko-main";
-  const apikey = Deno.env.get("EVOLUTION_API_KEY");
-  
-  await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${instance}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": apikey! },
-    body: JSON.stringify({ number, text })
-  }).catch(err => console.error("Error Evolution API:", err));
-}
+  } catch (err) {
+    console.error("Webhook Error:", err.message);
+    return new Response("Processed with error", { status: 200 });
+  }
+});

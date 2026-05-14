@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 serve(async (req) => {
-  // 1. Recibir datos del Webhook
+  // 1. Recibir datos del Webhook (db_reviews_logs)
   const payload = await req.json();
   const record = payload.record;
 
@@ -14,7 +14,7 @@ serve(async (req) => {
   );
 
   try {
-    // 2. Query Segura: Quitamos el !inner para que no explote si no hay config de WA
+    // 2. Obtener datos del negocio y configuración de WhatsApp
     const { data: biz, error: bizError } = await supabaseAdmin
       .from('businesses')
       .select(`
@@ -28,37 +28,37 @@ serve(async (req) => {
 
     if (bizError || !biz) throw new Error("Local no encontrado en la base de datos");
 
-    // Extraemos el teléfono de forma robusta manejando si viene como objeto o array
     const phone = Array.isArray(biz.whatsapp_configs) 
       ? biz.whatsapp_configs[0]?.phone_number 
       : (biz.whatsapp_configs as any)?.phone_number;
 
     if (!phone) {
-      console.log(`⚠️ Negocio ${biz.business_name} sin teléfono configurado. Abortando envío.`);
+      console.log(`⚠️ Negocio ${biz.business_name} sin teléfono configurado.`);
       return new Response("No phone configured", { status: 200 });
     }
 
-    // 3. i18n y Regionalismos (Búzios / Argentina)
+    // 3. Internacionalización (ES/PT)
     const isPT = biz.language === 'pt' || biz.country_code === 'BR';
-    const stars = "⭐".repeat(record.rating);
+    const stars = "⭐".repeat(record.stars || 0);
 
     const message = isPT 
       ? `🚨 *ALERTA DE DEFESA RANKO*\n\n` +
         `📍 *Local:* ${biz.business_name}\n` +
-        `⭐ *Rating:* ${stars} (${record.rating}/5)\n` +
-        `💬 *Feedback:* "${record.comment || 'Sem comentário'}"\n\n` +
-        `*Ação:* O cliente recebeu um cupom no Interceptor. Entre em contato se necessário!`
+        `⭐ *Rating:* ${stars} (${record.stars}/5)\n` +
+        `💬 *Feedback:* "${record.review_text || 'Sem comentário'}"\n\n` +
+        `*Ação:* O cliente está no Interceptor. Entre em contato se necessário!`
       : `🚨 *ALERTA DE DEFENSA RANKO*\n\n` +
         `📍 *Local:* ${biz.business_name}\n` +
-        `⭐ *Rating:* ${stars} (${record.rating}/5)\n` +
-        `💬 *Feedback:* "${record.comment || 'Sin comentario'}"\n\n` +
-        `*Acción:* El cliente recibió un cupón en el Interceptor. ¡Revisar en el salón!`;
+        `⭐ *Rating:* ${stars} (${record.stars}/5)\n` +
+        `💬 *Feedback:* "${record.review_text || 'Sin comentario'}"\n\n` +
+        `*Acción:* El cliente está en el Interceptor. ¡Revisar en el salón!`;
 
-    // 4. Envío vía Railway (Evolution API)
+    // 4. Envío vía Evolution API
     const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
     const evoInstance = Deno.env.get('EVOLUTION_INSTANCE') || 'ranko-main';
+    const evoUrl = Deno.env.get('EVOLUTION_API_URL') || "https://evolution-api-production-0695.up.railway.app";
     
-    const evoRes = await fetch(`https://evolution-api-production-0695.up.railway.app/message/sendText/${evoInstance}`, {
+    const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInstance}`, {
       method: 'POST',
       headers: { 
         'apikey': evoApiKey!, 
@@ -70,10 +70,7 @@ serve(async (req) => {
       })
     });
 
-    if (!evoRes.ok) {
-      const errorText = await evoRes.text();
-      throw new Error(`Error en Evolution API: ${errorText}`);
-    }
+    if (!evoRes.ok) throw new Error("Error en el envío de alerta por WhatsApp.");
 
     return new Response("Alerta enviada correctamente", { status: 200 });
 
