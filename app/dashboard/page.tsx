@@ -186,7 +186,10 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="bg-gradient-to-br from-indigo-600 to-emerald-500 p-2 rounded-xl"><Zap className="text-white fill-white" size={18} /></div>
-            <span className="text-2xl font-black italic uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent">Ranko AI</span>
+            {/* AJUSTE 1: LOGO SIN CORTES */}
+            <span className="text-2xl font-black italic uppercase bg-gradient-to-r from-indigo-500 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-4">
+              Ranko AI
+            </span>
           </div>
           <button onClick={logout} className="text-[10px] font-black uppercase text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl">Logout</button>
         </div>
@@ -261,14 +264,19 @@ export default function DashboardPage() {
           </div>
 
           <div className="lg:col-span-8 bg-slate-900 border border-white/5 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-2 flex bg-black/40 gap-2 border-b border-white/5">
+            {/* AJUSTE 2: TABS CON BORDES VISIBLES Y SCROLL MÓVIL */}
+            <div className="p-2 flex bg-black/40 gap-2 border-b border-white/5 overflow-x-auto no-scrollbar">
               {[
                 { id: 'overview', label: cur.overview, icon: LayoutDashboard },
                 { id: 'strategy', label: cur.strategy, icon: ShieldAlert },
                 { id: 'growth', label: cur.growth, icon: Zap },
                 { id: 'staff', label: cur.staff, icon: Users }
               ].map((tab) => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-4 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase transition-all ${activeTab === tab.id ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-white'}`}>
+                <button 
+                  key={tab.id} 
+                  onClick={() => setActiveTab(tab.id as any)} 
+                  className={`min-w-fit flex-1 py-4 px-6 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase transition-all ${activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                >
                   <tab.icon size={14}/> {tab.label}
                 </button>
               ))}
@@ -321,7 +329,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   
-                  {/* AJUSTE: QR Y WIDGET EN DOS COLUMNAS */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-slate-900/60 p-6 rounded-[2rem] border border-white/5 flex flex-col items-center text-center gap-4 shadow-xl">
                       <div className="bg-white p-3 rounded-xl shadow-lg"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent("https://rankoai.com/review/" + selectedBusiness?.id)}`} alt="QR" className="w-24 h-24" /></div>
