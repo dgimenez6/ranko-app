@@ -4,14 +4,13 @@ import React, { useEffect, useState } from 'react';
 import { 
   ShieldCheck, MessageSquare, Zap, Star, Loader2, 
   Settings, Clock, QrCode, LayoutDashboard, Heart, Phone, 
-  ShieldAlert, Gift, CheckCircle, BarChart3
+  ShieldAlert, Gift, CheckCircle, BarChart3, Languages
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase/client';
 
 export default function DashboardPage() {
-  const { logout } = useAuth();
-  const [user, setUser] = useState<any>(null);
+  const { logout, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [myBusinesses, setMyBusinesses] = useState<any[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<any>(null);
@@ -20,37 +19,33 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({ totalReplies: 0, avgRating: 0, happiness: 0, timeSaved: '0h' });
   const [viewMode, setViewMode] = useState<'single' | 'global'>('single');
 
-  // CONFIGURACIÓN 1:1
+  // CONFIGURACIÓN RECUPERADA
   const [bizInfo, setBizInfo] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState(''); 
   const [autoReply5, setAutoReply5] = useState(true); 
+  const [replyLang, setReplyLang] = useState('es'); // Recuperado: indispensable para Búzios
   const [promoText, setPromoText] = useState(''); 
+  const [autoCoupon, setAutoCoupon] = useState(true); // Recuperado: interruptor de cupón
   const [interceptorMode, setInterceptorMode] = useState('safe');
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) window.location.href = '/';
-      else {
-        setUser(session.user);
-        await fetchData(session.user);
-      }
+    if (authUser) {
+      fetchData(authUser);
       setLoading(false);
-    };
-    checkUser();
-  }, []);
+    }
+  }, [authUser]);
 
   const fetchData = async (currentUser: any) => {
     const { data: businesses } = await supabase.from('businesses').select('*, whatsapp_configs(phone_number)').eq('user_id', currentUser.id);
     if (businesses && businesses.length > 0) {
       setMyBusinesses(businesses);
-      setSelectedBusiness(businesses[0]);
-      applyBusinessData(businesses[0]);
+      const initialBiz = businesses[0];
+      setSelectedBusiness(initialBiz);
+      applyBusinessData(initialBiz);
       
-      // Lógica de Stats Globales vs Únicos
       const bizIds = businesses.map((b: any) => b.id);
       const { data: logs } = await supabase.from('reviews_logs').select('stars, status, business_id').in('business_id', bizIds);
-      if (logs) calculateStats(logs, viewMode === 'global' ? null : businesses[0].id);
+      if (logs) calculateStats(logs, viewMode === 'global' ? null : initialBiz.id);
     }
   };
 
@@ -69,7 +64,9 @@ export default function DashboardPage() {
   const applyBusinessData = (biz: any) => {
     setBizInfo(biz.business_info || '');
     setPromoText(biz.promo_text || '');
+    setReplyLang(biz.reply_lang || 'es');
     setAutoReply5(biz.auto_reply_5_stars ?? true);
+    setAutoCoupon(biz.auto_coupon ?? true);
     setInterceptorMode(biz.interceptor_mode || 'safe');
     const phone = Array.isArray(biz.whatsapp_configs) ? biz.whatsapp_configs[0]?.phone_number : biz.whatsapp_configs?.phone_number;
     setWhatsappNumber(phone || '');
@@ -81,14 +78,20 @@ export default function DashboardPage() {
     try {
       await supabase.from('businesses').update({
         business_info: bizInfo, promo_text: promoText, 
-        auto_reply_5_stars: autoReply5, interceptor_mode: interceptorMode
+        reply_lang: replyLang, auto_reply_5_stars: autoReply5,
+        auto_coupon: autoCoupon, interceptor_mode: interceptorMode
       }).eq('id', selectedBusiness.id);
-      await supabase.from('whatsapp_configs').upsert({ business_id: selectedBusiness.id, phone_number: whatsappNumber.replace(/\D/g, '') }, { onConflict: 'business_id' });
-      alert("¡Configuración actualizada!");
+      
+      await supabase.from('whatsapp_configs').upsert({ 
+        business_id: selectedBusiness.id, 
+        phone_number: whatsappNumber.replace(/\D/g, '') 
+      }, { onConflict: 'business_id' });
+      
+      alert("Configuración actualizada correctamente");
     } catch (e) { alert("Error al guardar"); } finally { setIsSaving(false); }
   };
 
-  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500" /></div>;
+  if (loading || !authUser) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500" /></div>;
 
   return (
     <main className="min-h-screen bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
@@ -96,15 +99,14 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="bg-gradient-to-br from-indigo-600 to-emerald-500 p-2 rounded-xl"><Zap className="text-white fill-white" size={18} /></div>
-            <span className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent whitespace-nowrap pr-8">Ranko AI</span>
+            <span className="text-2xl font-black italic tracking-tighter uppercase bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent">Ranko AI</span>
           </div>
           <button onClick={logout} className="text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/10 transition-all">Logout</button>
         </div>
       </nav>
 
       <div className="max-w-7xl mx-auto px-6 py-10">
-        {/* Selector de Modo de Vista */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex flex-wrap gap-4 mb-8">
            <button onClick={() => setViewMode('single')} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'single' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-900 text-slate-500 hover:text-white'}`}>Vista Individual</button>
            <button onClick={() => setViewMode('global')} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'global' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-900 text-slate-500 hover:text-white'}`}><BarChart3 size={14}/> Comparativa Global</button>
         </div>
@@ -150,15 +152,22 @@ export default function DashboardPage() {
             <div className="p-8 flex-1">
               {activeTab === 'overview' && (
                 <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-center sm:text-left">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Alertas WhatsApp</label>
-                      <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 transition-all shadow-inner" />
+                      <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Languages size={12}/> Idioma de Respuesta</label>
+                      <select value={replyLang} onChange={(e) => setReplyLang(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500">
+                        <option value="es">Español (Argentina/Latam)</option>
+                        <option value="pt">Português (Brasil)</option>
+                      </select>
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Cerebro de IA</label>
-                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder="Datos para la IA..." className="w-full bg-slate-950 border border-white/5 p-5 rounded-2xl text-xs min-h-[160px] outline-none focus:border-emerald-500 transition-all shadow-inner" />
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Cerebro de IA (Contexto del Local)</label>
+                    <textarea value={bizInfo} onChange={(e) => setBizInfo(e.target.value)} placeholder="Ej: Somos una posada en Búzios frente al mar, servimos desayuno artesanal..." className="w-full bg-slate-950 border border-white/5 p-5 rounded-2xl text-xs min-h-[160px] outline-none focus:border-emerald-500 transition-all shadow-inner" />
                   </div>
                 </div>
               )}
@@ -167,37 +176,48 @@ export default function DashboardPage() {
                 <div className="space-y-6">
                   <div className="bg-slate-950/50 p-6 rounded-2xl space-y-6 border border-white/5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4"><div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500"><Zap size={20}/></div><div className="text-[11px] font-black uppercase italic">Auto-Respuesta 5★</div></div>
+                      <div className="flex items-center gap-4"><div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500"><CheckCircle size={20}/></div><div className="text-[11px] font-black uppercase italic">Auto-Respuesta 5★</div></div>
                       <button onClick={() => setAutoReply5(!autoReply5)} className={`w-12 h-7 rounded-full relative transition-all ${autoReply5 ? 'bg-emerald-600' : 'bg-slate-800'}`}><div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${autoReply5 ? 'right-1' : 'left-1'}`} /></button>
                     </div>
                     <div className="space-y-3 pt-4 border-t border-white/5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Modo Interceptor (Reseñas Negativas)</label>
-                      <select value={interceptorMode} onChange={(e) => setInterceptorMode(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"><option value="safe">Redirigir a WhatsApp</option><option value="smart">Gestionar con IA</option></select>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Gestión de Crisis (Reseñas Negativas)</label>
+                      <select value={interceptorMode} onChange={(e) => setInterceptorMode(e.target.value)} className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"><option value="safe">Redirigir a WhatsApp del Dueño</option><option value="smart">Asistente IA de Contención</option></select>
                     </div>
                   </div>
                 </div>
               )}
 
               {activeTab === 'growth' && (
-                <div className="space-y-6">
-                  {/* Vista Pro del Cupón */}
-                  <div className="bg-slate-950/50 p-8 rounded-3xl border border-emerald-500/10 space-y-6">
+                <div className="space-y-6 animate-in fade-in duration-500">
+                  <div className="bg-slate-950/50 p-8 rounded-3xl border border-white/5 space-y-8">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4"><Gift className="text-emerald-400" size={24}/><span className="text-sm font-black uppercase italic italic tracking-tighter">Cupón de Fidelización Visual</span></div>
-                      <div className="text-[9px] bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full font-black uppercase tracking-widest">Killer de Trustar</div>
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400"><Gift size={20}/></div>
+                        <span className="text-sm font-black uppercase italic tracking-tighter">Programa de Fidelización</span>
+                      </div>
+                      {/* Interruptor de activación del cupón - Limpio y Pro */}
+                      <div className="flex items-center gap-3">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{autoCoupon ? 'Activado' : 'Desactivado'}</span>
+                        <button onClick={() => setAutoCoupon(!autoCoupon)} className={`w-12 h-7 rounded-full relative transition-all ${autoCoupon ? 'bg-indigo-600' : 'bg-slate-800'}`}><div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${autoCoupon ? 'right-1' : 'left-1'}`} /></button>
+                      </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                    <div className={`grid grid-cols-1 md:grid-cols-2 gap-8 items-center transition-opacity duration-300 ${autoCoupon ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                       <div className="space-y-4">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Beneficio del Cupón</label>
-                        <input type="text" value={promoText} onChange={(e) => setPromoText(e.target.value)} placeholder="Ej: 15% OFF en tu próxima cena" className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Premio por Reseña Positiva</label>
+                        <input type="text" value={promoText} onChange={(e) => setPromoText(e.target.value)} placeholder="Ej: 15% OFF en tu próxima cena" className="w-full bg-slate-950 border border-white/5 p-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 shadow-inner" />
+                        <p className="text-[9px] text-slate-500 italic uppercase">Este beneficio se muestra automáticamente tras calificar con 5 estrellas.</p>
                       </div>
-                      {/* Vista Previa de la Card */}
-                      <div className="bg-gradient-to-br from-slate-900 to-black border border-white/10 p-6 rounded-[2rem] relative overflow-hidden group">
-                        <div className="absolute -top-10 -right-10 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all"></div>
-                        <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 block mb-3">Vista Previa Cliente</span>
+                      
+                      <div className="bg-gradient-to-br from-slate-900 to-black border border-white/10 p-6 rounded-[2rem] relative overflow-hidden group shadow-2xl">
+                        <div className="absolute -top-10 -right-10 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl transition-all"></div>
+                        <span className="text-[8px] font-black uppercase tracking-widest text-indigo-400 block mb-3 flex items-center gap-2"><CheckCircle size={10}/> Vista del Cliente</span>
                         <h4 className="text-xl font-black italic tracking-tighter uppercase mb-1">{promoText || 'Tu Beneficio Aquí'}</h4>
-                        <p className="text-[9px] text-emerald-400 uppercase font-bold tracking-widest">Válido en {selectedBusiness?.business_name}</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Válido en {selectedBusiness?.business_name || 'tu local'}</p>
+                        <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center">
+                           <span className="text-[7px] text-slate-600 uppercase font-black tracking-widest">Powered by Ranko AI</span>
+                           <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center"><QrCode size={14} className="text-slate-500"/></div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -205,11 +225,11 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <div className="p-6 bg-black border-t border-white/5 flex items-center justify-between">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic">RANKO ENGINE v2.3 // MULTI-SINC</span>
-              <button onClick={handleSave} disabled={isSaving} className="bg-emerald-600 text-white px-10 py-4 rounded-xl font-black uppercase italic tracking-widest transition-all hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-2">
+            <div className="p-6 bg-black border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic tracking-[0.2em]">RANKO ENGINE v2.4 // GLOBAL SYNC</span>
+              <button onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto bg-emerald-600 text-white px-10 py-4 rounded-xl font-black uppercase italic tracking-widest transition-all hover:bg-emerald-500 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSaving ? <Loader2 className="animate-spin" size={14} /> : <ShieldCheck size={16} />}
-                {isSaving ? "Guardando..." : "Guardar Cambios"}
+                {isSaving ? "Guardando..." : "Actualizar Sistema"}
               </button>
             </div>
           </div>
