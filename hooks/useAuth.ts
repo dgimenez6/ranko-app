@@ -9,7 +9,7 @@ export const useAuth = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
 
-      // Si el usuario acaba de iniciar sesión o se restauró la sesión y hay tokens del proveedor (Google)
+      // Si el usuario acaba de iniciar sesión o se restauró la sesión y hay tokens de Google
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         // Extraemos los tokens específicos de Google que nos da Supabase Auth
         const providerToken = (session as any).provider_token; 
@@ -24,7 +24,7 @@ export const useAuth = () => {
           };
 
           // El refresh token solo viene la primera vez que da el consentimiento,
-          // lo guardamos solo si Google nos lo envió en esta sesión.
+          // lo guardamos únicamente si Google lo envió en esta sesión.
           if (providerRefreshToken) {
             updateData.google_refresh_token = providerRefreshToken;
           }
@@ -50,11 +50,13 @@ export const useAuth = () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Ajuste clave: Redirigir directamente a la nueva carpeta del dashboard
+        // Redirigir directamente a la carpeta del dashboard
         redirectTo: `${window.location.origin}/dashboard`,
+        // SOLUCIÓN AL 403: Pedimos permiso explícito para administrar las fichas de negocio
+        scopes: 'https://www.googleapis.com/auth/business.manage',
         queryParams: {
           access_type: 'offline',
-          prompt: 'consent', // Forzamos el consentimiento para asegurarnos de recibir el refresh_token siempre
+          prompt: 'consent', // Forzamos la pantalla de consentimiento para asegurar el refresh_token
         },
       },
     });
