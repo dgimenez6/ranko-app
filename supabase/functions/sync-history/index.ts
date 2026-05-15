@@ -18,7 +18,7 @@ serve(async (req) => {
     const { business_id } = await req.json();
     if (!business_id) throw new Error("business_id es requerido");
 
-    // 1. Obtener datos del negocio y tokens
+    // 1. Obtener datos del negocio
     const { data: biz, error: bizError } = await supabase
       .from('businesses')
       .select('*')
@@ -27,15 +27,61 @@ serve(async (req) => {
 
     if (bizError || !biz) throw new Error("Negocio no encontrado");
 
-    // 2. Pedir reseñas a Google (traemos las últimas 50 para el historial inicial)
+    let finalLocationId = biz.google_location_id;
+
+    // --- BLOQUE DE AUTO-CORRECCIÓN DE ID ---
+    // Si el ID empieza con ChIJ, es un Place ID y Google API v4 dará 404.
+    if (finalLocationId && finalLocationId.startsWith('ChIJ')) {
+      console.log("Detectado Place ID. Buscando el Location Name administrativo...");
+      
+      // A. Obtenemos la cuenta (Account) asociada al token
+      const accRes = await fetch("https://mybusinessbusinessinformation.googleapis.com/v1/accounts", {
+        headers: { "Authorization": `Bearer ${biz.google_access_token}` }
+      });
+      const accData = await accRes.json();
+      const accountName = accData.accounts?.[0]?.name; 
+
+      if (accountName) {
+        // B. Buscamos la ubicación real usando el Place ID como filtro
+        const locRes = await fetch(
+          `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name&filter=placeId=${finalLocationId}`,
+          { headers: { "Authorization": `Bearer ${biz.google_access_token}` } }
+        );
+        const locData = await locRes.json();
+        
+        if (locData.locations?.[0]) {
+          const realLocationName = locData.locations[0].name; // Retorna "locations/123456789"
+          
+          // C. Actualizamos la DB para que no vuelva a fallar
+          await supabase.from('businesses').update({ 
+            google_location_id: realLocationName,
+            google_place_id: finalLocationId // Respaldamos el ChIJ en la nueva columna
+          }).eq('id', biz.id);
+          
+          finalLocationId = realLocationName;
+          console.log("ID corregido con éxito:", finalLocationId);
+        } else {
+          throw new Error("No se encontró una Location vinculada a ese Place ID en tu cuenta de Google.");
+        }
+      } else {
+        throw new Error("No se pudo acceder a las cuentas de Google Business. Revisa el token.");
+      }
+    }
+    // --- FIN BLOQUE AUTO-CORRECCIÓN ---
+
+    // 2. Pedir reseñas a Google con el ID correcto
     const googleRes = await fetch(
-      `https://mybusiness.googleapis.com/v4/${biz.google_location_id}/reviews?pageSize=50`,
+      `https://mybusiness.googleapis.com/v4/${finalLocationId}/reviews?pageSize=50`,
       { headers: { "Authorization": `Bearer ${biz.google_access_token}` } }
     );
     
+    if (!googleRes.ok) {
+      const errorText = await googleRes.text();
+      throw new Error(`Google API Error: ${googleRes.status} - ${errorText}`);
+    }
+
     const googleData = await googleRes.json();
     const reviews = googleData.reviews || [];
-
     const bizCreatedAt = new Date(biz.created_at);
     let syncedCount = 0;
 
@@ -47,24 +93,19 @@ serve(async (req) => {
       
       let source = 'pending';
       if (hasReply) {
-        // LÓGICA DE CLASIFICACIÓN
-        // Si la respuesta fue antes de que el cliente existiera en Ranko, es 'manual_old'
         if (replyDate < bizCreatedAt) {
           source = 'manual_old';
         } else {
-          // Si fue después, chequeamos si Ranko la tiene en sus logs
           const { data: logExists } = await supabase
             .from('reviews_logs')
             .select('id')
             .eq('google_review_id', rev.reviewId)
             .maybeSingle();
-            
           source = logExists ? 'ranko' : 'manual_external';
         }
       }
 
-      // 4. Guardamos en reviews y reviews_logs
-      // Primero en la tabla de reseñas crudas
+      // 4. Upsert en Tablas
       await supabase.from('reviews').upsert({
         business_id: biz.id,
         google_review_id: rev.reviewId,
@@ -75,7 +116,6 @@ serve(async (req) => {
         created_at: rev.createTime
       }, { onConflict: 'google_review_id' });
 
-      // Luego en los logs para el Dashboard
       await supabase.from('reviews_logs').upsert({
         business_id: biz.id,
         stars: starMap[rev.starRating] || 0,
@@ -83,7 +123,7 @@ serve(async (req) => {
         reply_text: rev.reviewReply?.comment || null,
         status: hasReply ? 'posted' : 'pending',
         source: source,
-        google_review_id: rev.reviewId, // Asegurate de tener esta col en logs o usar upsert por id
+        google_review_id: rev.reviewId,
         created_at: rev.createTime
       }, { onConflict: 'google_review_id' });
 
@@ -93,7 +133,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       synced: syncedCount,
-      message: `Se sincronizaron ${syncedCount} reseñas correctamente.`
+      message: `Sincronización exitosa. ID corregido y ${syncedCount} reseñas procesadas.`
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200
@@ -102,7 +142,7 @@ serve(async (req) => {
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500
+      status: 400
     });
   }
 });
